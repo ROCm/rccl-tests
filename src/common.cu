@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 /*************************************************************************
  * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
  *
@@ -9,7 +10,6 @@
 #include <cstdio>
 #include <getopt.h>
 #include <libgen.h>
-#include "cuda.h"
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -129,27 +129,27 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
 testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataType_t type, double* devmax) {
   switch (type) {
     case ncclHalf:
-      deltaKern<half, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<half, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
     case ncclFloat:
-      deltaKern<float, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<float, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
     case ncclDouble:
-      deltaKern<double, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<double, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
 
     case ncclChar:
 #if NCCL_MAJOR >= 2
     case ncclUint8:
 #endif
-      deltaKern<uint8_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<uint8_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
     case ncclInt:
 #if NCCL_MAJOR >= 2
     case ncclUint32:
 #endif
-      deltaKern<uint32_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<uint32_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
     case ncclInt64:
     case ncclUint64:
-      deltaKern<uint64_t, 512><<<1, 512>>>(results, expected, count, devmax); break;
+      hipLaunchKernelGGL((deltaKern<uint64_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
   }
-  CUDACHECK(cudaDeviceSynchronize());
+  HIPCHECK(hipDeviceSynchronize());
   return testSuccess;
 }
 
@@ -196,61 +196,63 @@ template<>
 __device__ half ncclOpMin(half a, half b) { return __half2float(a)<__half2float(b) ? a : b; }
 
 template<typename T, T (*Op)(T, T)>
-__global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
+__global__ void InitDataReduceKernel(void* data, const size_t N, const size_t offset, const int rep, const int nranks) {
   for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x) {
     T val = testValue<T>(o+offset, rep, 0);
     for (int i=1; i<nranks; i++) {
       val = Op(val, testValue<T>(o+offset, rep, i));
     }
-    data[o] = val;
+    ((T*)data)[o] = val;
   }
 }
 
-#define KERN(type, op) (void*)InitDataReduceKernel<type, op<type>>
+typedef void(*redInitKern_t)(void* data, const size_t N, const size_t offset, const int rep, const int nranks);
+
+#define KERN(type, op) InitDataReduceKernel<type, op<type>>
 #define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin)
 
-static void* const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
+static redInitKern_t const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
 };
 
 testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks) {
   dim3 grid = { 32, 1, 1 };
   dim3 block = { 256, 1, 1 };
-  void* args[5] = { (void*)&data, (void*)&count, (void*)&offset, (void*)&rep, (void*)&nranks };
-  CUDACHECK(cudaLaunchKernel(redInitDataKerns[type*ncclNumOps+op], grid, block, args, 0, cudaStreamDefault));
+  hipLaunchKernelGGL((redInitDataKerns[type*ncclNumOps+op]), grid, block, 0, 0, data, count, offset, rep, nranks);
   return testSuccess;
 }
 
 template<typename T>
-__global__ void InitDataKernel(T* data, const size_t N, const int rep, const int rank) {
+__global__ void InitDataKernel(void* data, const size_t N, const int rep, const int rank) {
   for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x)
-    data[o] = testValue<T>(o, rep, rank);
+    ((T*)data)[o] = testValue<T>(o, rep, rank);
 }
 
-static void* const initDataKerns[ncclNumTypes] = {
-  (void*)InitDataKernel<  int8_t>,
-  (void*)InitDataKernel< uint8_t>,
-  (void*)InitDataKernel< int32_t>,
-  (void*)InitDataKernel<uint32_t>,
-  (void*)InitDataKernel< int64_t>,
-  (void*)InitDataKernel<uint64_t>,
-  (void*)InitDataKernel<    half>,
-  (void*)InitDataKernel<   float>,
-  (void*)InitDataKernel<  double>
+typedef void(*initDataKern_t)(void* data, const size_t N, const int rep, const int rank);
+
+static initDataKern_t const initDataKerns[ncclNumTypes] = {
+  InitDataKernel<  int8_t>,
+  InitDataKernel< uint8_t>,
+  InitDataKernel< int32_t>,
+  InitDataKernel<uint32_t>,
+  InitDataKernel< int64_t>,
+  InitDataKernel<uint64_t>,
+  InitDataKernel<    half>,
+  InitDataKernel<   float>,
+  InitDataKernel<  double>
 };
 
 template<typename T>
 testResult_t InitDataType(void* dest, const size_t N, const int rep, const int rank) {
   T* ptr = (T*)dest;
-  InitDataKernel<<<16, 512>>>(ptr, N, rep, rank);
+  hipLaunchKernelGGL((InitDataKernel), dim3(16), dim3(512), 0, 0, ptr, N, rep, rank);
   return testSuccess;
 }
 
 testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank) {
   dim3 grid = { 32, 1, 1 };
   dim3 block = { 256, 1, 1 };
-  void* args[4] = { (void*)&data, (void*)&count, (void*)&rep, (void*)&rank };
-  CUDACHECK(cudaLaunchKernel(initDataKerns[type], grid, block, args, 0, cudaStreamDefault));
+  hipLaunchKernelGGL((initDataKerns[type]), grid, block, 0, 0, data, count, rep, rank);
   return testSuccess;
 }
 
@@ -279,7 +281,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     int device;
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
-    CUDACHECK(cudaSetDevice(device));
+    HIPCHECK(hipSetDevice(device));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
     TESTCHECK(CheckDelta(data , args->expected[i], count, type, args->delta));
     maxDelta = std::max(*(args->deltaHost), maxDelta);
@@ -289,14 +291,14 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
        int *expectedHost = (int *)malloc(args->expectedBytes);
        int *dataHost = (int *)malloc(args->expectedBytes);
 
-       cudaMemcpy(expectedHost, args->expected[0], args->expectedBytes, cudaMemcpyDeviceToHost);
+       hipMemcpy(expectedHost, args->expected[0], args->expectedBytes, hipMemcpyDeviceToHost);
        printf("\n Expected: ");
        for(int j=0; j<args->expectedBytes/sizeof(int); j++) {
          printf("%d:%d ", j, expectedHost[j]);
        }
        printf("\n");
 
-       cudaMemcpy(dataHost, data, args->expectedBytes, cudaMemcpyDeviceToHost);
+       hipMemcpy(dataHost, data, args->expectedBytes, hipMemcpyDeviceToHost);
        printf("\n Actual: ");
        for (int j=0; j<args->expectedBytes/sizeof(int); j++) {
          printf("%d:%d ", j, dataHost[j]);
@@ -312,8 +314,8 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
-testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
-  cudaError_t cudaErr;
+testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* comms) {
+  hipError_t hipErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
@@ -322,15 +324,15 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
    for (int i=0; i<ngpus; i++) {
      if (done[i]) continue;
 
-     cudaErr = cudaStreamQuery(streams[i]);
-     if (cudaErr == cudaSuccess) {
+     hipErr = hipStreamQuery(streams[i]);
+     if (hipErr == hipSuccess) {
        done[i] = 1;
        remaining--;
        idle = 0;
        continue;
      }
 
-     if (cudaErr != cudaErrorNotReady) CUDACHECK(cudaErr);
+     if (hipErr != hipErrorNotReady) HIPCHECK(hipErr);
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
      if (comms) {
@@ -365,9 +367,9 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
-    int cudaDev;
-    NCCLCHECK(ncclCommCuDevice(args->comms[i], &cudaDev));
-    CUDACHECK(cudaSetDevice(cudaDev));
+    int hipDev;
+    NCCLCHECK(ncclCommCuDevice(args->comms[i], &hipDev));
+    HIPCHECK(hipSetDevice(hipDev));
 #endif
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     char* recvBuff = ((char*)args->recvbuffs[i]) + shift;
@@ -514,7 +516,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
   int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-  CUDACHECK(cudaSetDevice(gpuid));
+  HIPCHECK(hipSetDevice(gpuid));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
 }
@@ -531,7 +533,7 @@ testResult_t threadInit(struct threadArgs* args) {
   for (int i=0; i<args->nGpus; i++) {
     int rank = args->proc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(gpuid));
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
   NCCLCHECK(ncclGroupEnd());
@@ -555,9 +557,9 @@ testResult_t threadLaunch(struct testThread* thread) {
 }
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
-    CUDACHECK(cudaMalloc(sendbuff, nbytes));
-    CUDACHECK(cudaMalloc(recvbuff, nbytes));
-    CUDACHECK(cudaMalloc(expected, recvBytes));
+    HIPCHECK(hipMalloc(sendbuff, nbytes));
+    HIPCHECK(hipMalloc(recvbuff, nbytes));
+    HIPCHECK(hipMalloc(expected, recvBytes));
     return testSuccess;
 }
 
@@ -724,12 +726,12 @@ testResult_t run() {
   char line[MAX_LINE];
   int len = 0;
   for (int i=0; i<nThreads*nGpus; i++) {
-    int cudaDev = localRank*nThreads*nGpus+i;
+    int hipDev = localRank*nThreads*nGpus+i;
     int rank = proc*nThreads*nGpus+i;
-    cudaDeviceProp prop;
-    CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
+    hipDeviceProp_t prop;
+    HIPCHECK(hipGetDeviceProperties(&prop, hipDev));
     len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+                    rank, getpid(), hostname, hipDev, prop.pciBusID, prop.name);
   }
 
 #if MPI_SUPPORT
@@ -752,7 +754,7 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
-  cudaStream_t streams[nGpus*nThreads];
+  hipStream_t streams[nGpus*nThreads];
   void* sendbuffs[nGpus*nThreads];
   void* recvbuffs[nGpus*nThreads];
   void* expected[nGpus*nThreads];
@@ -761,9 +763,9 @@ testResult_t run() {
   ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads);
 
   for (int i=0; i<nGpus*nThreads; i++) {
-    CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+    HIPCHECK(hipSetDevice(localRank*nThreads*nGpus+i));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
-    CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
+    HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
@@ -776,7 +778,7 @@ testResult_t run() {
      } else {
        NCCLCHECK(ncclGroupStart());
        for (int i=0; i<nGpus*nThreads; i++) {
-         CUDACHECK(cudaSetDevice(localRank*nThreads*nGpus+i));
+         HIPCHECK(hipSetDevice(localRank*nThreads*nGpus+i));
          NCCLCHECK(ncclCommInitRank(comms+i, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+i));
        }
        NCCLCHECK(ncclGroupEnd());
@@ -786,7 +788,7 @@ testResult_t run() {
   int errors[nThreads];
   double bw[nThreads];
   double* delta;
-  CUDACHECK(cudaHostAlloc(&delta, sizeof(double)*nThreads, cudaHostAllocPortable | cudaHostAllocMapped));
+  HIPCHECK(hipHostMalloc(&delta, sizeof(double)*nThreads, hipHostMallocPortable | hipHostMallocMapped));
   int bw_count[nThreads];
   for (int t=0; t<nThreads; t++) {
     bw[t] = 0.0;
@@ -860,13 +862,13 @@ testResult_t run() {
     free(comms);
   }
 
-  // Free off CUDA allocated memory
+  // Free off HIP allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
-    CUDACHECK(cudaFree(sendbuffs[i]));
-    CUDACHECK(cudaFree(recvbuffs[i]));
-    CUDACHECK(cudaFree(expected[i]));
+    HIPCHECK(hipFree(sendbuffs[i]));
+    HIPCHECK(hipFree(recvbuffs[i]));
+    HIPCHECK(hipFree(expected[i]));
   }
-  CUDACHECK(cudaFreeHost(delta));
+  HIPCHECK(hipHostFree(delta));
 
   char* str = getenv("NCCL_TESTS_MIN_BW");
   double check_avg_bw = str ? atof(str) : -1;
@@ -879,8 +881,8 @@ testResult_t run() {
   MPI_Finalize();
 #endif
 
-  // 'cuda-memcheck --leak-check full' requires this
-  cudaDeviceReset();
+  // 'hip-memcheck --leak-check full' requires this
+  hipDeviceReset();
 
   if (errors[0] || bw[0] < check_avg_bw*(0.9))
     exit(EXIT_FAILURE);

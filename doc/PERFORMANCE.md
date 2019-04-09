@@ -1,6 +1,6 @@
-# Performance reported by NCCL tests
+# Performance reported by RCCL tests
 
-NCCL tests report the average operation time in ms, and two bandwidths in GB/s : algorithm bandwidth and bus bandwidth. This page explains what those numbers mean and what you should expect depending on the hardware used.
+RCCL tests report the average operation time in ms, and two bandwidths in GB/s : algorithm bandwidth and bus bandwidth. This page explains what those numbers mean and what you should expect depending on the hardware used.
 
 # Time
 
@@ -24,7 +24,7 @@ Algorithm bandwidth is using the most commonly used formula for bandwidth : size
 While the algorithm bandwidth makes sense for point-to-point operations like Send/Receive, it is not always helpful to measure collective operations speed, since the theoretical peak algorithm bandwidth is not equal to the hardware peak bandwidth, usually depending on the number of ranks.
 Most benchmarks only provide time measurements, which is hard to interpret for large sizes. Some others also provide algorithms bandwidth, but see that depending on the number of ranks, that bandwidth varies (and decreases as the number of ranks increase).
 
-To provide a number which reflects how optimally the hardware is used, NCCL tests introduce the notion of "Bus Bandwidth" ("busbw" column in the tests output).
+To provide a number which reflects how optimally the hardware is used, RCCL tests introduce the notion of "Bus Bandwidth" ("busbw" column in the tests output).
 This number is obtained applying a formula to the algorithm bandwidth to reflect the speed of the inter-GPU communication.
 Using this bus bandwidth, we can compare it with the hardware peak bandwidth, independently of the number of ranks used.
 
@@ -78,7 +78,7 @@ And the Bus Bandwidth is therefore computed as :
 
  `B = S/t * (n-1)/n = algbw * (n-1)/n`
 
-Note that here, S is the size in bytes of the total array, which for NCCL is equal to `recvcount*sizeof(datatype)*n` as the `recvcount` argument is the count per rank.
+Note that here, S is the size in bytes of the total array, which for RCCL is equal to `recvcount*sizeof(datatype)*n` as the `recvcount` argument is the count per rank.
 
 ### AllGather
 
@@ -96,7 +96,7 @@ And the Bus Bandwidth is therefore computed as :
 
  `B = S/t * (n-1)/n = algbw * (n-1)/n`
 
-Note that here, S is the size in bytes of the total array, which for NCCL is equal to `sendcount*sizeof(datatype)*n` as the `sendcount` argument is the count per rank.
+Note that here, S is the size in bytes of the total array, which for RCCL is equal to `sendcount*sizeof(datatype)*n` as the `sendcount` argument is the count per rank.
 
 ### Broadcast
 

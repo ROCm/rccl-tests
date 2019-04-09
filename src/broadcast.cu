@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "cuda_runtime.h"
+#include <hip/hip_runtime.h>
 #include "common.h"
 
 void print_header() {
@@ -33,13 +33,13 @@ testResult_t BroadcastInitData(struct threadArgs* args, ncclDataType_t type, ncc
 
   for (int i=0; i<args->nGpus; i++) {
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(gpuid));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
     if (rank == root) TESTCHECK(InitData(data, sendcount, type, rep, rank));
     TESTCHECK(InitData(args->expected[i], recvcount, type, rep, root));
-    CUDACHECK(cudaDeviceSynchronize());
+    HIPCHECK(hipDeviceSynchronize());
   }
   return testSuccess;
 }
@@ -52,7 +52,7 @@ void BroadcastGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
 #if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2

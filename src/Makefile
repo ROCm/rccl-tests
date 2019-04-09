@@ -4,41 +4,30 @@
 # See LICENSE.txt for license information
 #
 
-CUDA_HOME ?= /usr/local/cuda
+ROCM_HOME ?= /opt/rocm
+MPI_HOME ?= /usr/lib/openmpi
 PREFIX ?= /usr/local
 VERBOSE ?= 0
 DEBUG ?= 0
 
-CUDA_LIB ?= $(CUDA_HOME)/lib64
-CUDA_INC ?= $(CUDA_HOME)/include
-NVCC = $(CUDA_HOME)/bin/nvcc
+HIPCC = $(ROCM_HOME)/hip/bin/hipcc
+CXX = $(HIPCC)
 
-# Better define NVCC_GENCODE in your environment to the minimal set
-# of archs to reduce compile time.
-NVCC_GENCODE ?= -gencode=arch=compute_30,code=sm_30 \
-		-gencode=arch=compute_35,code=sm_35 \
-                -gencode=arch=compute_50,code=sm_50 \
-		-gencode=arch=compute_60,code=sm_60 \
-                -gencode=arch=compute_61,code=sm_61 \
-		-gencode=arch=compute_70,code=compute_70 \
-		-gencode=arch=compute_70,code=sm_70
-
-NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -std=c++11
-
-LDFLAGS    := -L${CUDA_LIB} -lcudart -lrt
-NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt
+HIPCUFLAGS :=
+HIPCUFLAGS += -I$(ROCM_HOME)/include
+HIPCUFLAGS += -I$(ROCM_HOME)/include/rccl
+HIPCUFLAGS += -I$(ROCM_HOME)/hip/include/hip
+HIPCUFLAGS += -I$(ROCM_HOME)/hiprand/include
+LDFLAGS    := -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
+HIPLDFLAGS := -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
 
 ifeq ($(DEBUG), 0)
-NVCUFLAGS += -O3 -g
-CXXFLAGS  += -O3 -g
+HIPCUFLAGS += -O3
 else
-NVCUFLAGS += -O0 -G -g
-CXXFLAGS  += -O0 -g -ggdb3
+HIPCUFLAGS += -O0 -g -ggdb3
 endif
 
-ifneq ($(VERBOSE), 0)
-NVCUFLAGS += -Xcompiler -Wall,-Wextra,-Wno-unused-parameter
-else
+ifeq ($(VERBOSE), 0)
 .SILENT:
 endif
 
@@ -46,16 +35,16 @@ endif
 
 BUILDDIR ?= ../build
 ifneq ($(NCCL_HOME), "")
-NVCUFLAGS += -I$(NCCL_HOME)/include/
-NVLDFLAGS += -L$(NCCL_HOME)/lib
+HIPCUFLAGS += -I$(NCCL_HOME)/include/
+HIPLDFLAGS   += -L$(NCCL_HOME)/lib
 endif
 
 ifeq ($(MPI), 1)
-NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
-NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
+HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include
+HIPLDFLAGS += -L${MPI_HOME}/lib -lmpi
 endif
-LIBRARIES += curand nccl nvToolsExt
-NVLDFLAGS += $(LIBRARIES:%=-l%)
+LIBRARIES += rccl
+HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
@@ -71,10 +60,12 @@ clean:
 ${DST_DIR}/%.o: %.cu common.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
+	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
 
 ${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"
+	$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}
 

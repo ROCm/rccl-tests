@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "cuda_runtime.h"
+#include <hip/hip_runtime.h>
 #include "common.h"
 
 void print_header() {
@@ -34,14 +34,14 @@ testResult_t ReduceInitData(struct threadArgs* args, ncclDataType_t type, ncclRe
 
   for (int i=0; i<args->nGpus; i++) {
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(gpuid));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
     TESTCHECK(InitData(data, sendcount, type, rep, rank));
-    CUDACHECK(cudaMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, cudaMemcpyDefault));
+    HIPCHECK(hipMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, hipMemcpyDefault));
     if (rank == root) TESTCHECK(InitDataReduce(args->expected[i], recvcount, 0, type, op, rep, nranks));
-    CUDACHECK(cudaDeviceSynchronize());
+    HIPCHECK(hipDeviceSynchronize());
   }
   return testSuccess;
 }
@@ -52,7 +52,7 @@ void ReduceGetBw(size_t count, int typesize, double sec, double* algBw, double* 
   *busBw = baseBw;
 }
 
-testResult_t ReduceRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+testResult_t ReduceRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
   NCCLCHECK(ncclReduce(sendbuff, recvbuff, count, type, op, root, comm, stream));
   return testSuccess;
 }

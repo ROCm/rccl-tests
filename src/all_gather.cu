@@ -4,7 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "cuda_runtime.h"
+#include <hip/hip_runtime.h>
 #include "common.h"
 
 void print_header() {
@@ -34,15 +34,15 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
 
   for (int i=0; i<args->nGpus; i++) {
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(gpuid));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
     TESTCHECK(InitData(data, sendcount, type, rep, rank));
     for (int j=0; j<nranks; j++) {
       TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
     }
-    CUDACHECK(cudaDeviceSynchronize());
+    HIPCHECK(hipDeviceSynchronize());
   }
   return testSuccess;
 }
@@ -55,7 +55,7 @@ void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t AllGatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+testResult_t AllGatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
   NCCLCHECK(ncclAllGather(sendbuff, recvbuff, count, type, comm, stream));
   return testSuccess;
 }

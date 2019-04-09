@@ -6,24 +6,23 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include "nccl.h"
+#include "rccl.h"
 #include <stdio.h>
 #include <algorithm>
-#include <curand.h>
 #ifdef MPI_SUPPORT
 #include "mpi.h"
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
 
-#define CUDACHECK(cmd) do {                         \
-  cudaError_t e = cmd;                              \
-  if( e != cudaSuccess ) {                          \
+#define HIPCHECK(cmd) do {                         \
+  hipError_t e = cmd;                              \
+  if( e != hipSuccess ) {                          \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: Test CUDA failure %s:%d '%s'\n",    \
+    printf("%s: Test HIP failure %s:%d '%s'\n",    \
          hostname,                                  \
-        __FILE__,__LINE__,cudaGetErrorString(e));   \
+        __FILE__,__LINE__,hipGetErrorString(e));   \
     return testCudaError;                           \
   }                                                 \
 } while(0)
@@ -71,7 +70,7 @@ struct testColl {
       ncclRedOp_t op, int root, int rep, int in_place);
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
   testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
-      ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
+      ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream);
 };
 extern struct testColl allReduceTest;
 extern struct testColl allGatherTest;
@@ -107,7 +106,7 @@ struct threadArgs {
   size_t recvInplaceOffset;
   ncclUniqueId ncclId;
   ncclComm_t* comms;
-  cudaStream_t* streams;
+  hipStream_t* streams;
 
   void** expected;
   size_t expectedBytes;

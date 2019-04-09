@@ -1,26 +1,26 @@
-# NCCL Tests
+# RCCL Tests
 
-These tests check both the performance and the correctness of NCCL operations. They can be compiled against [NCCL](http://github.com/nvidia/nccl)
+These tests check both the performance and the correctness of RCCL operations. They can be compiled against [RCCL](https://github.com/ROCmSoftwarePlatform/rccl)
 
 ## Build
 
 To build the tests, just type `make`.
 
-If CUDA is not installed in /usr/local/cuda, you may specify CUDA\_HOME. Similarly, if NCCL is not installed in /usr, you may specify NCCL\_HOME.
+If HIP is not installed in /opt/rocm, you may specify HIP\_HOME. Similarly, if RCCL is not installed in /usr, you may specify RCCL\_HOME.
 
 ```shell
-$ make CUDA_HOME=/path/to/cuda NCCL_HOME=/path/to/nccl
+$ make HIP_HOME=/path/to/hip RCCL_HOME=/path/to/rccl
 ```
 
-NCCL tests rely on MPI to work on multiple processes, hence multiple nodes. If you want to compile the tests with MPI support, you need to set MPI=1 and set MPI\_HOME to the path where MPI is installed.
+RCCL tests rely on MPI to work on multiple processes, hence multiple nodes. If you want to compile the tests with MPI support, you need to set MPI=1 and set MPI\_HOME to the path where MPI is installed.
 
 ```shell
-$ make MPI=1 MPI_HOME=/path/to/mpi CUDA_HOME=/path/to/cuda NCCL_HOME=/path/to/nccl
+$ make MPI=1 MPI_HOME=/path/to/mpi HIP_HOME=/path/to/hip RCCL_HOME=/path/to/rccl
 ```
 
 ## Usage
 
-NCCL tests can run on multiple processes, multiple threads, and multiple CUDA devices per thread. The number of process is managed by MPI and is therefore not passed to the tests as argument. The total number of ranks (=CUDA devices) will be equal to (number of processes)\*(number of threads)\*(number of GPUs per thread).
+RCCL tests can run on multiple processes, multiple threads, and multiple HIP devices per thread. The number of process is managed by MPI and is therefore not passed to the tests as argument. The total number of ranks (=HIP devices) will be equal to (number of processes)\*(number of threads)\*(number of GPUs per thread).
 
 ### Quick examples
 
@@ -51,7 +51,7 @@ All tests support the same set of arguments :
   * Increments can be either fixed or a multiplication factor. Only one of those should be used
     * `-i,--stepbytes <increment size>` fixed increment between sizes. Default : (max-min)/10.
     * `-f,--stepfactor <increment factor>` multiplication factor between sizes. Default : disabled.
-* NCCL operations arguments
+* RCCL operations arguments
   * `-o,--op <sum/prod/min/max/all>` Specify which reduction operation to perform. Only relevant for reduction operations like Allreduce, Reduce or ReduceScatter. Default : Sum.
   * `-d,--datatype <nccltype/all>` Specify which datatype to use. Default : Float.
   * `-r,--root <root/all>` Specify which root to use. Only for operations with a root like broadcast or reduce. Default : 0.
@@ -60,11 +60,11 @@ All tests support the same set of arguments :
   * `-w,--warmup_iters <warmup iteration count>` number of warmup iterations (not timed). Default : 5.
   * `-m,--agg_iters <aggregation count>` number of operations to aggregate together in each iteration. Default : 1.
 * Test operation
-  * `-p,--parallel_init <0/1>` use threads to initialize NCCL in parallel. Default : 0.
+  * `-p,--parallel_init <0/1>` use threads to initialize RCCL in parallel. Default : 0.
   * `-c,--check <0/1>` check correctness of results. This can be quite slow on large numbers of GPUs. Default : 1.
-  * `-z,--blocking <0/1>` Make NCCL collective blocking, i.e. have CPUs wait and sync after each collective. Default : 0.
+  * `-z,--blocking <0/1>` Make RCCL collective blocking, i.e. have CPUs wait and sync after each collective. Default : 0.
 
 ## Copyright
 
-NCCL tests are provided under the BSD license. All source code and accompanying documentation is copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+RCCL tests are provided under the BSD license. All source code and accompanying documentation is copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
 
