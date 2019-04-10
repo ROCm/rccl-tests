@@ -1,10 +1,12 @@
-#include "hip/hip_runtime.h"
+
 /*************************************************************************
  * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "hip/hip_runtime.h"
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
