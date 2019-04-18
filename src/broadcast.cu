@@ -113,9 +113,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
   return testSuccess;
 }
 
-struct testEngine broadcastEngine = {
+struct testEngine ncclTestEngine = {
   BroadcastGetBuffSize,
   BroadcastRunTest
 };
-
-#pragma weak ncclTestEngine=broadcastEngine

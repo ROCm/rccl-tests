@@ -116,9 +116,7 @@ testResult_t ReduceRunTest(struct threadArgs* args, int root, ncclDataType_t typ
   return testSuccess;
 }
 
-struct testEngine reduceEngine = {
+struct testEngine ncclTestEngine = {
   ReduceGetBuffSize,
   ReduceRunTest
 };
-
-#pragma weak ncclTestEngine=reduceEngine
