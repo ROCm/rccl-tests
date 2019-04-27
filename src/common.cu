@@ -214,7 +214,11 @@ typedef void(*redInitKern_t)(void* data, const size_t N, const size_t offset, co
 #define OPS(type) KERN(type, ncclOpSum), KERN(type, ncclOpProd), KERN(type, ncclOpMax), KERN(type, ncclOpMin)
 
 static redInitKern_t const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
+#if NCCL_MAJOR >= 2
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
+#else
+  OPS(char), OPS(int32_t), OPS(half), OPS(float), OPS(double), OPS(int64_t), OPS(uint64_t)
+#endif
 };
 
 testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks) {
@@ -233,6 +237,7 @@ __global__ void InitDataKernel(void* data, const size_t N, const int rep, const 
 typedef void(*initDataKern_t)(void* data, const size_t N, const int rep, const int rank);
 
 static initDataKern_t const initDataKerns[ncclNumTypes] = {
+#if NCCL_MAJOR >= 2
   InitDataKernel<  int8_t>,
   InitDataKernel< uint8_t>,
   InitDataKernel< int32_t>,
@@ -242,6 +247,15 @@ static initDataKern_t const initDataKerns[ncclNumTypes] = {
   InitDataKernel<    half>,
   InitDataKernel<   float>,
   InitDataKernel<  double>
+#else
+  InitDataKernel<    char>,
+  InitDataKernel< int32_t>,
+  InitDataKernel<    half>,
+  InitDataKernel<   float>,
+  InitDataKernel<  double>,
+  InitDataKernel< int64_t>,
+  InitDataKernel<uint64_t>,
+#endif
 };
 
 template<typename T>
@@ -336,6 +350,7 @@ testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* 
 
      if (hipErr != hipErrorNotReady) HIPCHECK(hipErr);
 
+#if NCCL_MAJOR >= 2
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
      if (comms) {
        ncclResult_t ncclAsyncErr;
@@ -349,6 +364,7 @@ testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* 
          NCCLCHECK(ncclAsyncErr);
        }
      }
+#endif
 #endif
    }
 
@@ -543,7 +559,11 @@ testResult_t threadInit(struct threadArgs* args) {
   TESTCHECK(threadRunTests(args));
 
   for (int i=0; i<args->nGpus; i++) {
+#if NCCL_MAJOR >= 2
     NCCLCHECK(ncclCommDestroy(args->comms[i]));
+#else
+    ncclCommDestroy(args->comms[i]);
+#endif
   }
   return testSuccess;
 }
@@ -860,7 +880,11 @@ testResult_t run() {
 
   if (!parallel_init) {
     for(int i=0; i<nGpus*nThreads; ++i)
+#if NCCL_MAJOR >= 2
       NCCLCHECK(ncclCommDestroy(comms[i]));
+#else
+      ncclCommDestroy(comms[i]);
+#endif
     free(comms);
   }
 
