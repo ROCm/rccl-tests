@@ -203,6 +203,11 @@ extern ncclDataType_t test_types[ncclNumTypes];
 extern const char *test_typenames[ncclNumTypes];
 extern ncclRedOp_t test_ops[ncclNumOps];
 extern const char *test_opnames[ncclNumOps];
+typedef enum { ncclCoarse        = 0,
+               ncclFine          = 1,
+               ncclHost          = 2,
+               nccl_NUM_MTYPES   = 3 } ncclMemoryType_t;
+extern const char *test_memorytypes[nccl_NUM_MTYPES];
 
 static int ncclstringtotype(char *str) {
     for (int t=0; t<ncclNumTypes; t++) {
@@ -228,6 +233,16 @@ static int ncclstringtoop (char *str) {
     }
     printf("invalid op %s, defaulting to %s .. \n", str, test_opnames[ncclSum]);
     return ncclSum;
+}
+
+static int ncclstringtomtype (char *str) {
+    for (int o=0; o<nccl_NUM_MTYPES; o++) {
+      if (strcmp(str, test_memorytypes[o]) == 0) {
+        return o;
+      }
+    }
+    printf("invalid memorytype %s, defaulting to %s .. \n", str, test_memorytypes[ncclCoarse]);
+    return ncclCoarse;
 }
 
 extern thread_local int is_main_thread;

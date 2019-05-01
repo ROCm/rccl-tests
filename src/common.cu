@@ -22,6 +22,7 @@ const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "dou
 #endif
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
+const char *test_memorytypes[nccl_NUM_MTYPES] = {"coarse", "fine", "host"};
 
 thread_local int is_main_thread = 0;
 
@@ -41,6 +42,7 @@ static int nccltype = ncclFloat;
 static int ncclroot = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
+static int memorytype = 0;
 
 double parsesize(char *value) {
     long long int units;
@@ -579,10 +581,22 @@ testResult_t threadLaunch(struct testThread* thread) {
 }
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
+  if (memorytype == ncclFine) {
+    HIPCHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
+    HIPCHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
+    HIPCHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocFinegrained));
+  }
+  else if (memorytype == ncclHost) {
+    HIPCHECK(hipHostMalloc(sendbuff, nbytes));
+    HIPCHECK(hipHostMalloc(recvbuff, nbytes));
+    HIPCHECK(hipHostMalloc(expected, recvBytes));
+  }
+  else {
     HIPCHECK(hipMalloc(sendbuff, nbytes));
     HIPCHECK(hipMalloc(recvbuff, nbytes));
     HIPCHECK(hipMalloc(expected, recvBytes));
-    return testSuccess;
+  }
+  return testSuccess;
 }
 
 testResult_t run(); // Main function
@@ -609,12 +623,13 @@ int main(int argc, char* argv[]) {
     {"datatype", required_argument, 0, 'd'},
     {"root", required_argument, 0, 'r'},
     {"blocking", required_argument, 0, 'z'},
+    {"memory_type", required_argument, 0, 'y'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -669,6 +684,9 @@ int main(int argc, char* argv[]) {
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
         break;
+      case 'y':
+        memorytype = ncclstringtomtype(optarg);
+        break;
       case 'h':
 	printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
@@ -686,6 +704,7 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
+            "[-y,--memory_type <coarse/fine/host>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -707,6 +726,7 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
+            "[-y,--memory_type <coarse/fine/host>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -890,9 +910,16 @@ testResult_t run() {
 
   // Free off HIP allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
-    HIPCHECK(hipFree(sendbuffs[i]));
-    HIPCHECK(hipFree(recvbuffs[i]));
-    HIPCHECK(hipFree(expected[i]));
+    if (memorytype == ncclHost) {
+      HIPCHECK(hipHostFree(sendbuffs[i]));
+      HIPCHECK(hipHostFree(recvbuffs[i]));
+      HIPCHECK(hipHostFree(expected[i]));
+    }
+    else {
+      HIPCHECK(hipFree(sendbuffs[i]));
+      HIPCHECK(hipFree(recvbuffs[i]));
+      HIPCHECK(hipFree(expected[i]));
+    }
   }
   HIPCHECK(hipHostFree(delta));
 
