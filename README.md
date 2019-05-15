@@ -1,6 +1,6 @@
 # RCCL Tests
 
-These tests check both the performance and the correctness of RCCL operations. They can be compiled against [RCCL](https://github.com/ROCmSoftwarePlatform/rccl)
+These tests check both the performance and the correctness of RCCL operations. They can be compiled against [RCCL](https://github.com/ROCmSoftwarePlatform/rccl).
 
 ## Build
 
@@ -67,6 +67,8 @@ All tests support the same set of arguments :
 ## Copyright
 
 RCCL tests are provided under the BSD license.
+
 All source code and accompanying documentation is copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+
 All modifications are copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
 
