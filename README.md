@@ -6,10 +6,10 @@ These tests check both the performance and the correctness of RCCL operations. T
 
 To build the tests, just type `make`.
 
-If HIP is not installed in /opt/rocm, you may specify HIP\_HOME. Similarly, if RCCL is not installed in /usr, you may specify RCCL\_HOME.
+If HIP is not installed in /opt/rocm, you may specify HIP\_HOME. Similarly, if RCCL is not installed in /usr, you may specify NCCL\_HOME and CUSTOM\_RCCL\_LIB.
 
 ```shell
-$ make HIP_HOME=/path/to/hip RCCL_HOME=/path/to/rccl
+$ make HIP_HOME=/path/to/hip NCCL_HOME=/path/to/rccl CUSTOM_RCCL_LIB=/path/to/rccl/lib/librccl.so
 ```
 
 RCCL tests rely on MPI to work on multiple processes, hence multiple nodes. If you want to compile the tests with MPI support, you need to set MPI=1 and set MPI\_HOME to the path where MPI is installed.
