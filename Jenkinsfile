@@ -81,4 +81,4 @@ rcclCI:
 
     buildProjectNoDocker(tests, formatCheck, nodes.dockerArray, compileCommand, testCommand, packageCommand)
 
-} 23.77
+}
