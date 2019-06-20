@@ -1,6 +1,6 @@
 #!/usr/bin/env groovy
 // Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
-// This shared library is available at https://github.com/ROCmSoftwarePlatform/rccl-tests
+// This shared library is available at https://github.com/ROCmSoftwarePlatform/rcclTests
 @Library('rocJenkins@noDocker') _
 
 // This is file for internal AMD use.
@@ -27,15 +27,14 @@ properties([
 ////////////////////////////////////////////////////////////////////////
 import java.nio.file.Path;
 
-rcclCI:
+rcclTestsCI:
 {
-
-    def rccl-tests = new rocProject('rccl-tests')
+    def rcclTests = new rocProject('rcclTests')
     // customize for project
     tests.paths.build_command = './install.sh'
 
     // Define test architectures, optional rocm version argument is available
-    def nodes = new dockerNodes(['rccl-tests'], rccl-tests)
+    def nodes = new dockerNodes(['rcclTests'], rcclTests)
 
     boolean formatCheck = false
 
@@ -52,7 +51,7 @@ rcclCI:
                   export RCCL_PATH="$PWD"/rccl-install
                   cd ..
                   cd ${project.paths.project_build_prefix}
-                  ${project.paths.build_command} -m --rccl_home=$RCCL_PATH --mpi_home=
+                  ${project.paths.build_command} --rccl_home=$RCCL_PATH
                 """
 
 	  sh command
@@ -64,7 +63,7 @@ rcclCI:
 
         def command = """#!/usr/bin/env bash
                 set -x
-                LD_LIBRARY_PATH=$RCCL_PATH/lib/ python3 -m pytest --junitxml=./testreport.xml
+                LD_LIBRARY_PATH=$RCCL_PATH/lib/ python3 -m pytest -k "not MPI" --junitxml=./testreport.xml
             """
 
         sh command
@@ -80,5 +79,4 @@ rcclCI:
     }
 
     buildProjectNoDocker(tests, formatCheck, nodes.dockerArray, compileCommand, testCommand, packageCommand)
-
 }
