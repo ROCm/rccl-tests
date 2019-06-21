@@ -34,7 +34,7 @@ rcclTestsCI:
     rcclTests.paths.build_command = './install.sh'
 
     // Define test architectures, optional rocm version argument is available
-    def nodes = new dockerNodes(['RCCL'], RCCL)
+    def nodes = new dockerNodes(['RCCL'], rcclTests)
 
     boolean formatCheck = false
 
