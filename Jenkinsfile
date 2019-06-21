@@ -1,6 +1,6 @@
 #!/usr/bin/env groovy
 // Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
-// This shared library is available at https://github.com/ROCmSoftwarePlatform/rcclTests
+// This shared library is available at https://github.com/ROCmSoftwarePlatform/rocJENKINS
 @Library('rocJenkins@noDocker') _
 
 // This is file for internal AMD use.
@@ -31,10 +31,10 @@ rcclTestsCI:
 {
     def rcclTests = new rocProject('rcclTests')
     // customize for project
-    tests.paths.build_command = './install.sh'
+    rcclTests.paths.build_command = './install.sh'
 
     // Define test architectures, optional rocm version argument is available
-    def nodes = new dockerNodes(['rcclTests'], rcclTests)
+    def nodes = new dockerNodes(['RCCL'], RCCL)
 
     boolean formatCheck = false
 
@@ -78,5 +78,5 @@ rcclTestsCI:
                       """
     }
 
-    buildProjectNoDocker(tests, formatCheck, nodes.dockerArray, compileCommand, testCommand, packageCommand)
+    buildProjectNoDocker(rcclTests, formatCheck, nodes.dockerArray, compileCommand, testCommand, packageCommand)
 }
