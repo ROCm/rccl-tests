@@ -49,6 +49,7 @@ rcclTestsCI:
                   cd rccl
                   ./install.sh --install_prefix="$PWD"/rccl-install
                   export RCCL_PATH="$PWD"/rccl-install
+                  echo "$RCCL_PATH"
                   cd ..
                   cd ${project.paths.project_build_prefix}
                   ${project.paths.build_command} --rccl_home=$RCCL_PATH
