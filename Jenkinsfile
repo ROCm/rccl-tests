@@ -43,28 +43,27 @@ rcclTestsCI:
         platform, project->
 
         project.paths.construct_build_prefix()
+
         def command = """#!/usr/bin/env bash
                   set -x
+                  rm -rf rccl
                   git clone https://github.com/ROCmSoftwarePlatform/rccl
                   cd rccl
-                  ./install.sh --install_prefix="$PWD"/rccl-install
-                  export RCCL_PATH="$PWD"/rccl-install
-                  echo "$RCCL_PATH"
+                  export RCCL_PATH=${WORKSPACE}/rccl/rccl-install
+                  ./install.sh -i --prefix=\$RCCL_PATH
                   cd ..
                   cd ${project.paths.project_build_prefix}
-                  ${project.paths.build_command} --rccl_home=$RCCL_PATH
+                  ${project.paths.build_command} --rccl_home=\$RCCL_PATH
                 """
-
 	  sh command
     }
-
     def testCommand =
     {
         platform, project->
 
         def command = """#!/usr/bin/env bash
                 set -x
-                LD_LIBRARY_PATH=$RCCL_PATH/lib/ python3 -m pytest -k "not MPI" --junitxml=./testreport.xml
+                LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:${WORKSPACE}/rccl/rccl-install/lib/ python3 -m pytest -k "not MPI" --junitxml=./testreport.xml
             """
 
         sh command
