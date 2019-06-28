@@ -292,7 +292,7 @@ void Barrier(struct threadArgs* args)
   args->barrier_idx=!args->barrier_idx;
 }
 
-testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, double *delta) {
+testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, double *delta, bool *error) {
   size_t count = args->expectedBytes/wordSize(type);
   double maxDelta = 0.0;
   for (int i=0; i<args->nGpus; i++) {
@@ -327,7 +327,11 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
-  if (maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
+  if (maxDelta > DeltaMaxValue(type)*(nranks - 1))
+  {
+    args->errors[0]++;
+    *error = true;
+  }
   *delta = maxDelta;
   return testSuccess;
 }
@@ -446,6 +450,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   Barrier(args);
 
   double maxDelta = 0;
+  bool error = false;
   static __thread int rep = 0;
   rep++;
   if (datacheck) {
@@ -456,7 +461,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
       TESTCHECK(completeColl(args));
 
-      TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta));
+      TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta, &error));
 
       //aggregate delta from all threads and procs
       Barrier(args);
@@ -466,6 +471,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         }
 #ifdef MPI_SUPPORT
         MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &error, 1, MPI_C_BOOL, MPI_LOR, MPI_COMM_WORLD);
 #endif
       }
       Barrier(args);
@@ -481,7 +487,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     sprintf(timeStr, "%7.2f", timeUsec);
   }
   if (datacheck) {
-     PRINT("  %7s  %6.2f  %6.2f  %5.0le", timeStr, algBw, busBw, maxDelta);
+     PRINT("  %7s  %6.2f  %6.2f  %5.0le%s", timeStr, algBw, busBw, maxDelta, error ? "*" : "");
   } else {
      PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
   }
@@ -757,7 +763,7 @@ testResult_t run() {
 #endif
   is_main_thread = (proc == 0) ? 1 : 0;
 
-  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d validation: %d \n", nThreads, nGpus, minBytes, maxBytes,
+  PRINT("# nThread: %d nGpus: %d minBytes: %ld maxBytes: %ld step: %ld(%s) warmupIters: %d iters: %d validation: %d \n", nThreads, nGpus, minBytes, maxBytes,
       (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes", warmup_iters, iters, datacheck);
   if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
@@ -887,6 +893,7 @@ testResult_t run() {
   for (int t=nThreads-1; t>=0; t--) {
     if (t) pthread_join(threads[t].thread, NULL);
     TESTCHECK(threads[t].ret);
+
     if (t) {
       errors[0] += errors[t];
       bw[0] += bw[t];
@@ -927,6 +934,7 @@ testResult_t run() {
   double check_avg_bw = str ? atof(str) : -1;
   bw[0] /= bw_count[0];
 
+  if (datacheck) PRINT("# Errors with asterisks indicate errors that have exceeded the maximum threshold.\n");
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
   PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("#\n");
