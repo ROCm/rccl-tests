@@ -738,6 +738,15 @@ int main(int argc, char* argv[]) {
 	return 0;
     }
   }
+
+  int numDevices;
+  HIPCHECK(hipGetDeviceCount(&numDevices));
+  if (nGpus > numDevices)
+  {
+      fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d)\n", nGpus, numDevices);
+      return testNcclError;
+  }
+
 #ifdef MPI_SUPPORT
   MPI_Init(&argc, &argv);
 #endif
