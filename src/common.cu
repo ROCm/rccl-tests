@@ -8,8 +8,10 @@
 
 #include "hip/hip_runtime.h"
 #include "common.h"
+#include "tinyxml2.h"
 #include <pthread.h>
 #include <cstdio>
+#include <string>
 #include <getopt.h>
 #include <libgen.h>
 
@@ -43,6 +45,7 @@ static int ncclroot = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
 static int memorytype = 0;
+static char* xmlFilename = "";
 
 double parsesize(char *value) {
     long long int units;
@@ -420,6 +423,73 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
+tinyxml2::XMLNode* AddXMLParameter(tinyxml2::XMLDocument* xmlDoc, tinyxml2::XMLNode* parentNode, const char* paramName, const char* paramValue, const char* paramUnit = nullptr, const char* paramDesc = nullptr)
+{
+    tinyxml2::XMLElement * pElement = xmlDoc->NewElement("parameter");
+    pElement->SetAttribute("name", paramName);
+
+    tinyxml2::XMLElement * vElement = xmlDoc->NewElement("value");
+    vElement->SetText(paramValue);
+    pElement->InsertEndChild(vElement);
+
+    if (paramUnit != nullptr)
+    {
+        tinyxml2::XMLElement * uElement = xmlDoc->NewElement("unit");
+        uElement->SetText(paramUnit);
+        pElement->InsertEndChild(uElement);
+    }
+
+    if (paramDesc != nullptr)
+    {
+        tinyxml2::XMLElement * dElement = xmlDoc->NewElement("description");
+        dElement->SetText(paramDesc);
+        pElement->InsertEndChild(dElement);
+    }
+
+    return parentNode->InsertEndChild(pElement);
+}
+
+tinyxml2::XMLNode* AddXMLTest(tinyxml2::XMLDocument* xmlDoc, tinyxml2::XMLNode* parentNode, const char* testName, const char* testDesc = nullptr)
+{
+    tinyxml2::XMLElement * tElement = xmlDoc->NewElement("test");
+    tElement->SetAttribute("name", testName);
+
+    if (testDesc != nullptr)
+    {
+        tinyxml2::XMLElement * dElement = xmlDoc->NewElement("description");
+        dElement->SetText(testDesc);
+        tElement->InsertEndChild(dElement);
+    }
+
+    return parentNode->InsertEndChild(tElement);
+}
+
+tinyxml2::XMLNode* AddXMLTestResult(tinyxml2::XMLDocument* xmlDoc, tinyxml2::XMLNode* parentNode, const char* resultName, const char* resultValue, const char* resultUnit = nullptr, const char* resultDesc = nullptr)
+{
+    tinyxml2::XMLElement * rElement = xmlDoc->NewElement("result");
+    rElement->SetAttribute("name", resultName);
+
+    tinyxml2::XMLElement * vElement = xmlDoc->NewElement("dblValue");
+    vElement->SetText(resultValue);
+    rElement->InsertEndChild(vElement);
+
+    if (resultUnit != nullptr)
+    {
+        tinyxml2::XMLElement * uElement = xmlDoc->NewElement("unit");
+        uElement->SetText(resultUnit);
+        rElement->InsertEndChild(uElement);
+    }
+
+    if (resultDesc != nullptr)
+    {
+        tinyxml2::XMLElement * dElement = xmlDoc->NewElement("description");
+        dElement->SetText(resultDesc);
+        rElement->InsertEndChild(dElement);
+    }
+
+    return parentNode->InsertEndChild(rElement);
+}
+
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   size_t count = args->nbytes / wordSize(type);
 
@@ -497,6 +567,100 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
+testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, tinyxml2::XMLDocument* xmlDoc, tinyxml2::XMLNode* groupNode) {
+  size_t count = args->nbytes / wordSize(type);
+
+  // Sync
+  TESTCHECK(startColl(args, type, op, root, in_place, 0));
+  TESTCHECK(completeColl(args));
+
+  Barrier(args);
+
+  // Performance Benchmark
+  auto start = std::chrono::high_resolution_clock::now();
+  for (int iter = 0; iter < iters; iter++) {
+    if (agg_iters>1) NCCLCHECK(ncclGroupStart());
+    for (int aiter = 0; aiter < agg_iters; aiter++) {
+      TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
+    }
+    if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
+  }
+  TESTCHECK(completeColl(args));
+
+  auto delta = std::chrono::high_resolution_clock::now() - start;
+  double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
+  deltaSec = deltaSec/(iters*agg_iters);
+
+  double algBw, busBw;
+  args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
+
+  Barrier(args);
+
+  double maxDelta = 0;
+  bool error = false;
+  static __thread int rep = 0;
+  rep++;
+  if (datacheck) {
+      // Initialize sendbuffs, recvbuffs and expected
+      TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
+
+      //test validation in single itertion, should ideally be included into the multi-iteration run
+      TESTCHECK(startColl(args, type, op, root, in_place, 0));
+      TESTCHECK(completeColl(args));
+
+      TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta, &error));
+
+      //aggregate delta from all threads and procs
+      Barrier(args);
+      if (args->thread == 0) {
+        for (int i=1; i<args->nThreads; i++) {
+          maxDelta += args->deltaThreads[i];
+        }
+#ifdef MPI_SUPPORT
+        MPI_Allreduce(MPI_IN_PLACE, &maxDelta, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &error, 1, MPI_C_BOOL, MPI_LOR, MPI_COMM_WORLD);
+#endif
+      }
+      Barrier(args);
+  }
+
+  double timeUsec = deltaSec*1.0E6;
+  char timeStr[10];
+  if (timeUsec > 10000.0) {
+    sprintf(timeStr, "%7.0f", timeUsec);
+  } else if (timeUsec > 100.0) {
+    sprintf(timeStr, "%7.1f", timeUsec);
+  } else {
+    sprintf(timeStr, "%7.2f", timeUsec);
+  }
+  if (datacheck) {
+     PRINT("  %7s  %6.2f  %6.2f  %5.0le%s", timeStr, algBw, busBw, maxDelta, error ? "*" : "");
+  } else {
+     PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
+  }
+
+  if (xmlDoc)
+  {
+    std::string testName = "test_";
+    testName.append(std::to_string(args->nbytes));
+    testName.append(in_place ? "B_in_place" : "B_out_of_place");
+
+    tinyxml2::XMLNode* xmlTest = AddXMLTest(xmlDoc, groupNode, testName.c_str());
+    AddXMLParameter(xmlDoc, xmlTest, "size", std::to_string(args->nbytes).c_str(), "bytes");
+    AddXMLParameter(xmlDoc, xmlTest, "count", std::to_string(args->nbytes / wordSize(type)).c_str());
+    AddXMLParameter(xmlDoc, xmlTest, "root", std::to_string(root).c_str());
+    AddXMLTestResult(xmlDoc, xmlTest, "time", timeStr, "us");
+    AddXMLTestResult(xmlDoc, xmlTest, "algbw", std::to_string(algBw).c_str(), "GB/s");
+    AddXMLTestResult(xmlDoc, xmlTest, "busbw", std::to_string(busBw).c_str(), "GB/s");
+    AddXMLTestResult(xmlDoc, xmlTest, "error", std::to_string(maxDelta).c_str());
+    groupNode->InsertEndChild(xmlTest);
+  }
+
+  args->bw[0] += busBw;
+  args->bw_count[0]++;
+  return testSuccess;
+}
+
 void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   int nranks = args->nProcs*args->nGpus*args->nThreads;
   size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
@@ -526,14 +690,46 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
   TESTCHECK(completeColl(args));
 
+  printf("Testing\n");
+
+  tinyxml2::XMLDocument* xmlDoc = nullptr;
+  if (!args->xmlFilename.empty())
+  {
+    xmlDoc = new tinyxml2::XMLDocument();
+  }
+
+  tinyxml2::XMLElement* xmlRoot;
+  if (xmlDoc)
+  {
+    std::string groupName = args->collTest->name;
+    groupName.append("_");
+    groupName.append(typeName);
+    if (opName != "")
+    {
+        groupName.append("_");
+        groupName.append(opName);
+    }
+    xmlRoot = xmlDoc->NewElement("group");
+    xmlRoot->SetAttribute("name", groupName.c_str());
+    xmlDoc->InsertFirstChild(xmlRoot);
+  }
+
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
       print_line_header(max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
-      TESTCHECK(BenchTime(args, type, op, root, 0));
-      TESTCHECK(BenchTime(args, type, op, root, 1));
+
+      TESTCHECK(BenchTime(args, type, op, root, 0, xmlDoc, xmlRoot));
+      TESTCHECK(BenchTime(args, type, op, root, 1, xmlDoc, xmlRoot));
       PRINT("\n");
   }
+
+  if (xmlDoc)
+  {
+      xmlDoc->SaveFile(args->xmlFilename.c_str());
+      delete(xmlDoc);
+  }
+
   return testSuccess;
 }
 
@@ -630,12 +826,13 @@ int main(int argc, char* argv[]) {
     {"root", required_argument, 0, 'r'},
     {"blocking", required_argument, 0, 'z'},
     {"memory_type", required_argument, 0, 'y'},
+    {"xml_output", required_argument, 0, 'x'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:x:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -693,6 +890,9 @@ int main(int argc, char* argv[]) {
       case 'y':
         memorytype = ncclstringtomtype(optarg);
         break;
+      case 'x':
+        xmlFilename = optarg;
+        break;
       case 'h':
 	printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
@@ -711,6 +911,7 @@ int main(int argc, char* argv[]) {
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
             "[-y,--memory_type <coarse/fine/host>] \n\t"
+            "[-x,--xml_output <name of XML file to store test results>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -733,6 +934,7 @@ int main(int argc, char* argv[]) {
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
             "[-y,--memory_type <coarse/fine/host>] \n\t"
+            "[-x,--xml_output <name of XML file to store test results>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -881,6 +1083,7 @@ testResult_t run() {
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
+    threads[t].args.xmlFilename = xmlFilename;
 
     threads[t].func = parallel_init ? threadInit : threadRunTests;
     if (t)

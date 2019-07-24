@@ -55,21 +55,33 @@ HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
+SRC_FILES += tinyxml2.cpp
+OBJ_FILES += ${DST_DIR}/tinyxml2.o
 BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
+
+$(info $$SRC_FILES is [${SRC_FILES}])
+$(info $$OBJ_FILES is [${OBJ_FILES}])
 
 build: ${BIN_FILES}
 
 clean:
 	rm -rf ${DST_DIR}
 
-${DST_DIR}/%.o: %.cu common.h
+
+${DST_DIR}/tinyxml2.o: tinyxml2.cpp tinyxml2.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
 	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o
+${DST_DIR}/%.o: %.cu common.h tinyxml2.h
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
+
+${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/common.o ${DST_DIR}/tinyxml2.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"

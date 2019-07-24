@@ -30,27 +30,27 @@ nprocs = ["2"]
 ngpus_single = ["1","2","4"]
 ngpus_mpi = ["1","2"]
 byte_range = [("4", "128M")]
-op = ["sum", "prod", "min", "max"]
 step_factor = ["2"]
 datatype = ["int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"]
-memory_type = ["coarse","fine", "host"]
+memory_type = ["coarse", "fine", "host"]
+xml_filename = "broadcast.xml"
 
 path = os.path.dirname(os.path.abspath(__file__))
 executable = path + "/../build/broadcast_perf"
 
-@pytest.mark.parametrize("nthreads, ngpus_single, byte_range, op, step_factor, datatype, memory_type",
-    itertools.product(nthreads, ngpus_single, byte_range, op, step_factor, datatype, memory_type))
-def test_BroadcastSingleProcess(nthreads, ngpus_single, byte_range, op, step_factor, datatype, memory_type):
+@pytest.mark.parametrize("nthreads, ngpus_single, byte_range, step_factor, datatype, memory_type",
+    itertools.product(nthreads, ngpus_single, byte_range,step_factor, datatype, memory_type))
+def test_BroadcastSingleProcess(nthreads, ngpus_single, byte_range, step_factor, datatype, memory_type):
     try:
         args = [executable,
                 "-t", nthreads,
                 "-g", ngpus_single,
                 "-b", byte_range[0],
                 "-e", byte_range[1],
-                "-o", op,
                 "-f", step_factor,
                 "-d", datatype,
-                "-y", memory_type]
+                "-y", memory_type,
+                "-x", xml_filename]
         if memory_type == "fine":
             args.insert(0, "HSA_FORCE_FINE_GRAIN_PCIE=1")
         args_str = " ".join(args)
@@ -61,9 +61,9 @@ def test_BroadcastSingleProcess(nthreads, ngpus_single, byte_range, op, step_fac
 
     assert rccl_test.returncode == 0
 
-@pytest.mark.parametrize("nthreads, nprocs, ngpus_mpi, byte_range, op, step_factor, datatype",
-    itertools.product(nthreads, nprocs, ngpus_mpi, byte_range, op, step_factor, datatype))
-def test_BroadcastMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, op, step_factor, datatype):
+@pytest.mark.parametrize("nthreads, nprocs, ngpus_mpi, byte_range, step_factor, datatype",
+    itertools.product(nthreads, nprocs, ngpus_mpi, byte_range, step_factor, datatype))
+def test_BroadcastMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, step_factor, datatype):
     try:
         mpi_hostfile = request.config.getoption('--hostfile')
         if not mpi_hostfile:
@@ -74,9 +74,9 @@ def test_BroadcastMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, op, step
                     "-g", ngpus_mpi,
                     "-b", byte_range[0],
                     "-e", byte_range[1],
-                    "-o", op,
                     "-f", step_factor,
-                    "-d", datatype]
+                    "-d", datatype,
+                    "-x", xml_filename]
         else:
             args = ["mpirun -np", nprocs,
                     "-host", mpi_hostfile,
@@ -86,10 +86,10 @@ def test_BroadcastMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, op, step
                     "-g", ngpus_mpi,
                     "-b", byte_range[0],
                     "-e", byte_range[1],
-                    "-o", op,
                     "-f", step_factor,
                     "-d", datatype,
-                    "-y", memory_type]
+                    "-y", memory_type,
+                    "-x", xml_filename]
         if memory_type == "fine":
             args.insert(0, "HSA_FORCE_FINE_GRAIN_PCIE=1")
         args_str = " ".join(args)

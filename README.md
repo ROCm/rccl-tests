@@ -66,14 +66,11 @@ All tests support the same set of arguments :
 
 ## Unit tests
 
-Unit tests for rccl-tests are implemented with pytest (python3 is also required).  Several notes for the unit tests:
-
-1. The LD_LIBRARY_PATH environment variable will need to be set to include /path/to/rccl-install/lib/ in order to run the unit tests.
-2. The HSA_FORCE_FINE_GRAIN_PCIE environment variable will need to be set to 1 in order to run the unit tests which use fine-grained memory type.
+Unit tests for rccl-tests are implemented with pytest (python3 is also required).  The LD_LIBRARY_PATH environment variable will need to be set to include /path/to/rccl-install/lib/ in order to run the unit tests.
 
 The unit tests can be invoked within the rccl-tests root, or in the test subfolder.  An example call to the unit tests:
 ```shell
-$ LD_LIBRARY_PATH=/path/to/rccl-install/lib/ HSA_FORCE_FINE_GRAIN_PCIE=1 python3 -m pytest
+$ LD_LIBRARY_PATH=/path/to/rccl-install/lib/ python3 -m pytest
 ```
 
 ## Copyright

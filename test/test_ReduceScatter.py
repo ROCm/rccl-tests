@@ -34,6 +34,7 @@ op = ["sum", "prod", "min", "max"]
 step_factor = ["2"]
 datatype = ["int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"]
 memory_type = ["coarse","fine", "host"]
+xml_filename = "reduce_scatter.xml"
 
 path = os.path.dirname(os.path.abspath(__file__))
 executable = path + "/../build/reduce_scatter_perf"
@@ -50,7 +51,8 @@ def test_ReduceScatterSingleProcess(nthreads, ngpus_single, byte_range, op, step
                 "-o", op,
                 "-f", step_factor,
                 "-d", datatype,
-                "-y", memory_type]
+                "-y", memory_type,
+                "-x", xml_filename]
         if memory_type == "fine":
             args.insert(0, "HSA_FORCE_FINE_GRAIN_PCIE=1")
         args_str = " ".join(args)
@@ -76,7 +78,8 @@ def test_ReduceScatterMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, op, 
                     "-e", byte_range[1],
                     "-o", op,
                     "-f", step_factor,
-                    "-d", datatype]
+                    "-d", datatype,
+                    "-x", xml_filename]
         else:
             args = ["mpirun -np", nprocs,
                     "-host", mpi_hostfile,
@@ -89,7 +92,8 @@ def test_ReduceScatterMPI(request, nthreads, nprocs, ngpus_mpi, byte_range, op, 
                     "-o", op,
                     "-f", step_factor,
                     "-d", datatype,
-                    "-y", memory_type]
+                    "-y", memory_type,
+                    "-x", xml_filename]
         if memory_type == "fine":
             args.insert(0, "HSA_FORCE_FINE_GRAIN_PCIE=1")
         args_str = " ".join(args)

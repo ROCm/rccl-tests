@@ -61,6 +61,12 @@ typedef enum {
   }                                                 \
 } while(0)
 
+namespace tinyxml2
+{
+    class XMLDocument;
+    class XMLNode;
+}
+
 struct testColl {
   const char name[20];
   void (*getCollByteCount)(
@@ -86,6 +92,8 @@ struct testEngine {
 };
 
 extern struct testEngine ncclTestEngine;
+
+
 
 struct threadArgs {
   size_t nbytes;
@@ -123,6 +131,7 @@ struct threadArgs {
   int* errors;
   double* bw;
   int* bw_count;
+  std::string xmlFilename;
 
   struct testColl* collTest;
 };
@@ -139,6 +148,7 @@ struct testThread {
 
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
+extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root, tinyxml2::XMLDocument* xmlDoc, tinyxml2::XMLNode* groupNode);
 extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
 extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks);
 extern testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank);

@@ -110,6 +110,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
       TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
     }
   }
+
   return testSuccess;
 }
 
