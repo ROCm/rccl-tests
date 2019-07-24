@@ -63,11 +63,11 @@ rcclTestsCI:
 
         def command = """#!/usr/bin/env bash
                 set -x
-                LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:${WORKSPACE}/rccl/rccl-install/lib/ python3 -m pytest -k "not MPI" --junitxml=./testreport.xml
+                LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:${WORKSPACE}/rccl/rccl-install/lib/ python3 -m pytest -k "not MPI and not AllGather and not Reduce and not ReduceScatter" --junitxml=./testreport.xml
             """
 
         sh command
-        //junit "${project.paths.project_build_prefix}/build/release/*.xml"
+        junit "${project.paths.project_build_prefix}/*.xml"
     }
 
     def packageCommand =
