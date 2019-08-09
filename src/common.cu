@@ -398,6 +398,7 @@ testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* 
    // We might want to let other threads (including NCCL threads) use the CPU.
    if (idle) pthread_yield();
   }
+  free(done);
   return testSuccess;
 }
 
@@ -814,7 +815,7 @@ testResult_t run() {
     int rank = proc*nThreads*nGpus+i;
     hipDeviceProp_t prop;
     HIPCHECK(hipGetDeviceProperties(&prop, hipDev));
-    len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+    len += snprintf(line+len, MAX_LINE>len ? MAX_LINE-len : 0, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
                     rank, getpid(), hostname, hipDev, prop.pciBusID, prop.name);
   }
 
