@@ -851,6 +851,9 @@ testResult_t run() {
     HIPCHECK(hipSetDevice(localRank*nThreads*nGpus+i));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+    // initialize data buffer to avoid all zero data
+    TESTCHECK(InitData(sendbuffs[i], maxBytes, ncclUint8, 0, i));
+    HIPCHECK(hipDeviceSynchronize());
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
