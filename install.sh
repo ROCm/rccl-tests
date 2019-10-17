@@ -78,7 +78,7 @@ build_dir=./build
 rm -rf ${build_dir}
 
 if ($mpi_enabled); then
-    if [[ ${mpi_dir} -eq "" ]]; then
+    if [[ ${mpi_dir} == "" ]]; then
         echo "MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument."
         exit 1
     else
