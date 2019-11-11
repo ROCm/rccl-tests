@@ -13,6 +13,7 @@
 #include <getopt.h>
 #include <libgen.h>
 #include <signal.h>
+#include <algorithm>
 
 #if NCCL_MAJOR >= 2
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
@@ -551,7 +552,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Benchmark
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
-      print_line_header(max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
+      print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
       TESTCHECK(BenchTime(args, type, op, root, 0));
       TESTCHECK(BenchTime(args, type, op, root, 1));
       PRINT("\n");
