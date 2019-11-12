@@ -853,7 +853,11 @@ testResult_t run() {
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
     HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
     // initialize data buffer to avoid all zero data
+#if NCCL_MAJOR >= 2
     TESTCHECK(InitData(sendbuffs[i], maxBytes, ncclUint8, 0, i));
+#else
+    TESTCHECK(InitData(sendbuffs[i], maxBytes, ncclChar, 0, i));
+#endif
     HIPCHECK(hipDeviceSynchronize());
   }
 
