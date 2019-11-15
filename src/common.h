@@ -195,6 +195,10 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclDouble:
     //case ncclFloat64:
       return 8;
+#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
+    case ncclBfloat16:
+      return 2;
+#endif
     default: return 0;
   }
 }

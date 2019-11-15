@@ -7,6 +7,7 @@
  ************************************************************************/
 
 #include "hip/hip_runtime.h"
+#include "rccl_bfloat16.h"
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
@@ -16,8 +17,13 @@
 #include <algorithm>
 
 #if NCCL_MAJOR >= 2
+#if RCCL_BFLOAT16 == 1
+ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble, ncclBfloat16};
+const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double", "bf16"};
+#else
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble};
 const char *test_typenames[ncclNumTypes] = {"int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"};
+#endif
 #else
 ncclDataType_t test_types[ncclNumTypes] = {ncclChar, ncclInt, ncclHalf, ncclFloat, ncclDouble, ncclInt64, ncclUint64};
 const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "double", "int64", "uint64"};
@@ -78,6 +84,9 @@ double DeltaMaxValue(ncclDataType_t type) {
 #endif
     case ncclInt64:
     case ncclUint64: return 1e-200;
+#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
+    case ncclBfloat16: return 1e-2;
+#endif
   }
   return 1e-200;
 }
@@ -155,6 +164,10 @@ testResult_t CheckDelta(void* expected, void* results, size_t count, ncclDataTyp
     case ncclInt64:
     case ncclUint64:
       hipLaunchKernelGGL((deltaKern<uint64_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
+#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
+    case ncclBfloat16:
+      hipLaunchKernelGGL((deltaKern<rccl_bfloat16, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
+#endif
   }
   HIPCHECK(hipDeviceSynchronize());
   return testSuccess;
@@ -180,6 +193,10 @@ __device__ float testValue<float>(const size_t offset, const int rep, const int 
 template<>
 __device__ half testValue<half>(const size_t offset, const int rep, const int rank) {
   return __float2half(testValue<float>(offset, rep, rank));
+}
+template<>
+__device__ rccl_bfloat16 testValue<rccl_bfloat16>(const size_t offset, const int rep, const int rank) {
+  return (float)testValue<float>(offset, rep, rank);
 }
 
 // Operations
@@ -220,7 +237,11 @@ typedef void(*redInitKern_t)(void* data, const size_t N, const size_t offset, co
 
 static redInitKern_t const redInitDataKerns[ncclNumOps*ncclNumTypes] = {
 #if NCCL_MAJOR >= 2
+#if RCCL_BFLOAT16 == 1
+  OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double), OPS(rccl_bfloat16)
+#else
   OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double)
+#endif
 #else
   OPS(char), OPS(int32_t), OPS(half), OPS(float), OPS(double), OPS(int64_t), OPS(uint64_t)
 #endif
@@ -251,7 +272,10 @@ static initDataKern_t const initDataKerns[ncclNumTypes] = {
   InitDataKernel<uint64_t>,
   InitDataKernel<    half>,
   InitDataKernel<   float>,
-  InitDataKernel<  double>
+  InitDataKernel<  double>,
+#if RCCL_BFLOAT16 == 1
+  InitDataKernel<rccl_bfloat16>
+#endif
 #else
   InitDataKernel<    char>,
   InitDataKernel< int32_t>,

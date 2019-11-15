@@ -15,11 +15,10 @@ HIPCC = $(ROCM_HOME)/hip/bin/hipcc
 CXX = $(HIPCC)
 
 
-HIPCUFLAGS :=
+HIPCUFLAGS := -std=c++14
 HIPCUFLAGS += -I$(ROCM_HOME)/include
 HIPCUFLAGS += -I$(ROCM_HOME)/include/rccl
 HIPCUFLAGS += -I$(ROCM_HOME)/hip/include/hip
-HIPCUFLAGS += -I$(ROCM_HOME)/hiprand/include
 LDFLAGS    := -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
 HIPLDFLAGS := $(CUSTOM_RCCL_LIB) -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
 
