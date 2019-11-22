@@ -196,7 +196,7 @@ __device__ half testValue<half>(const size_t offset, const int rep, const int ra
 }
 template<>
 __device__ rccl_bfloat16 testValue<rccl_bfloat16>(const size_t offset, const int rep, const int rank) {
-  return (float)testValue<float>(offset, rep, rank);
+  return rccl_bfloat16(testValue<float>(offset, rep, rank));
 }
 
 // Operations
