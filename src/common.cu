@@ -51,6 +51,7 @@ static int ncclroot = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
 static int memorytype = 0;
+static int stress_cycles = 1;
 static ncclResult_t ncclabort = ncclSuccess;
 
 double parsesize(char *value) {
@@ -573,13 +574,16 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
   TESTCHECK(completeColl(args));
 
-  // Benchmark
-  for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
-      setupArgs(size, type, args);
-      print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
-      TESTCHECK(BenchTime(args, type, op, root, 0));
-      TESTCHECK(BenchTime(args, type, op, root, 1));
-      PRINT("\n");
+  for (size_t iter = 0; iter < stress_cycles; iter++) {
+    if (iter > 0) PRINT("# Testing %d cycle.\n", iter+1);
+    // Benchmark
+    for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
+        setupArgs(size, type, args);
+        print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
+        TESTCHECK(BenchTime(args, type, op, root, 0));
+        TESTCHECK(BenchTime(args, type, op, root, 1));
+        PRINT("\n");
+    }
   }
   return testSuccess;
 }
@@ -683,12 +687,13 @@ int main(int argc, char* argv[]) {
     {"root", required_argument, 0, 'r'},
     {"blocking", required_argument, 0, 'z'},
     {"memory_type", required_argument, 0, 'y'},
+    {"stress_cycles", required_argument, 0, 's'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:s:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -745,6 +750,9 @@ int main(int argc, char* argv[]) {
         break;
       case 'y':
         memorytype = ncclstringtomtype(optarg);
+        break;
+      case 's':
+        stress_cycles = strtol(optarg, NULL, 0);
         break;
       case 'h':
 	printf("USAGE: %s \n\t"
