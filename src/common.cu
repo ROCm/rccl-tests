@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <algorithm>
 
+//#define DEBUG_PRINT
+
 #if NCCL_MAJOR >= 2
 #if RCCL_BFLOAT16 == 1
 ncclDataType_t test_types[ncclNumTypes] = {ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble, ncclBfloat16};
@@ -326,6 +328,8 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   for (int i=0; i<args->nGpus; i++) {
     int device;
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    if (rank != root && strcmp(args->collTest->name, "Gather") == 0)
+      continue;
     NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
     HIPCHECK(hipSetDevice(device));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
@@ -333,25 +337,24 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     maxDelta = std::max(*(args->deltaHost), maxDelta);
 
 #ifdef DEBUG_PRINT
-    if (rank == 0) {
+    //if (rank == 0) {
        int *expectedHost = (int *)malloc(args->expectedBytes);
        int *dataHost = (int *)malloc(args->expectedBytes);
 
-       hipMemcpy(expectedHost, args->expected[0], args->expectedBytes, hipMemcpyDeviceToHost);
-       printf("\n Expected: ");
+       hipMemcpy(expectedHost, args->expected[rank], args->expectedBytes, hipMemcpyDeviceToHost);
+       printf("\n Rank [%d] Expected: ", rank);
        for(int j=0; j<args->expectedBytes/sizeof(int); j++) {
          printf("%d:%d ", j, expectedHost[j]);
        }
-       printf("\n");
-
        hipMemcpy(dataHost, data, args->expectedBytes, hipMemcpyDeviceToHost);
-       printf("\n Actual: ");
+       printf("\n Rank [%d] Actual: ", rank);
        for (int j=0; j<args->expectedBytes/sizeof(int); j++) {
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
-       free(temp);
-    }
+       free(dataHost);
+       free(expectedHost);
+    //}
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
@@ -571,7 +574,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   TESTCHECK(completeColl(args));
 
   for (size_t iter = 0; iter < stress_cycles; iter++) {
-    if (iter > 0) PRINT("# Testing %ld cycle.\n", iter+1);
+    if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
