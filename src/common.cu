@@ -355,11 +355,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
-  if (maxDelta > DeltaMaxValue(type)*(nranks - 1))
-  {
-    args->errors[0]++;
-    *error = true;
-  }
+  if (args->reportErrors && maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
   *delta = maxDelta;
   return testSuccess;
 }
@@ -575,7 +571,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   TESTCHECK(completeColl(args));
 
   for (size_t iter = 0; iter < stress_cycles; iter++) {
-    if (iter > 0) PRINT("# Testing %d cycle.\n", iter+1);
+    if (iter > 0) PRINT("# Testing %ld cycle.\n", iter+1);
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
@@ -958,6 +954,8 @@ testResult_t run() {
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
+
+    threads[t].args.reportErrors = 1;
 
     threads[t].func = parallel_init ? threadInit : threadRunTests;
     if (t)
