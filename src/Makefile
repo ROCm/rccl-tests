@@ -37,11 +37,11 @@ endif
 BUILDDIR ?= ../build
 ifneq ($(NCCL_HOME), "")
 HIPCUFLAGS += -I$(NCCL_HOME)/include/
-HIPLDFLAGS   += -L$(NCCL_HOME)/lib
+HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME)/lib -L$(NCCL_HOME)/lib
 endif
 
 ifeq ($(MPI), 1)
-HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include
+HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
 HIPLDFLAGS += -L${MPI_HOME}/lib -lmpi
 else ifeq ($(MPICH), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I/usr/include/mpich
