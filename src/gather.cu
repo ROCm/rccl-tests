@@ -9,6 +9,7 @@
 #include "common.h"
 
 //#define DEBUG_PRINT
+#define USE_RCCL_GATHER_SCATTER
 
 void print_header() {
   PRINT("# %10s  %12s  %6s            out-of-place                       in-place          \n", "", "", "");
@@ -57,6 +58,8 @@ testResult_t GatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRe
     }
     HIPCHECK(hipDeviceSynchronize());
   }
+  // We don't support in-place gather
+  args->reportErrors = in_place ? 0 : 1;
   return testSuccess;
 }
 
@@ -76,6 +79,13 @@ testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDat
 
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 7
+#if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
+  if (rank == root)
+    NCCLCHECK(ncclGather(sendbuff, recvbuff, count, type, root, comm, stream));
+  else
+    NCCLCHECK(ncclGather(sendbuff, 0, count, type, root, comm, stream));
+#else
   NCCLCHECK(ncclGroupStart());
   if (rank == root) {
   for (int r=0; r<nRanks; r++)
@@ -83,6 +93,8 @@ testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDat
   }
   NCCLCHECK(ncclSend(sendbuff, count, type, root, comm, stream));
   NCCLCHECK(ncclGroupEnd());
+#endif
+#endif
   return testSuccess;
 }
 

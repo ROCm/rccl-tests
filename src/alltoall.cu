@@ -8,6 +8,8 @@
 #include <hip/hip_runtime.h>
 #include "common.h"
 
+#define USE_RCCL_GATHER_SCATTER
+
 void print_header() {
   PRINT("# %10s  %12s  %6s  %6s            out-of-place                       in-place          \n", "", "", "", "");
   PRINT("# %10s  %12s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type", "redop",
@@ -65,12 +67,18 @@ testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   size_t rankOffset = count * wordSize(type);
   if (count == 0) return testSuccess;
 
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 7
+#if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
+  NCCLCHECK(ncclAllToAll(sendbuff, recvbuff, count, type, comm, stream));
+#else
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nRanks; r++) {
     NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
     NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
   }
   NCCLCHECK(ncclGroupEnd());
+#endif
+#endif
 
   return testSuccess;
 }

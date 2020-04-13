@@ -9,6 +9,7 @@
 #include "common.h"
 
 //#define DEBUG_PRINT
+#define USE_RCCL_GATHER_SCATTER
 
 void print_header() {
   PRINT("# %10s  %12s  %6s  %6s            out-of-place                       in-place          \n", "", "", "", "");
@@ -59,6 +60,8 @@ testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclR
     TESTCHECK(InitData(args->expected[i], recvcount, type, rep, rank));
     HIPCHECK(hipDeviceSynchronize());
   }
+  // We don't support in-place scatter
+  args->reportErrors = in_place ? 0 : 1;
   return testSuccess;
 }
 
@@ -78,6 +81,10 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
 
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
+#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 7
+#if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
+  NCCLCHECK(ncclScatter(sendbuff, recvbuff, count, type, root, comm, stream));
+#else
   NCCLCHECK(ncclGroupStart());
   if (rank == root) {
     for (int r=0; r<nRanks; r++)
@@ -85,6 +92,8 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
   }
   NCCLCHECK(ncclRecv(recvbuff, count, type, root, comm, stream));
   NCCLCHECK(ncclGroupEnd());
+#endif
+#endif
   return testSuccess;
 }
 
