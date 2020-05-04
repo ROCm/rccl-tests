@@ -27,7 +27,7 @@ def runTestCommand (platform, project)
     def command = """#!/usr/bin/env bash
                 set -x
                 cd ${project.paths.project_build_prefix}
-		python3 -m pytest -k "not MPI" --junitxml=./testreport.xml
+		python3 -m pytest -k "not MPI" --verbose --junitxml=./testreport.xml
             """
 
    platform.runCommand(this, command)
