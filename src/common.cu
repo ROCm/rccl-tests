@@ -885,9 +885,9 @@ testResult_t run() {
     HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
     // initialize data buffer to avoid all zero data
 #if NCCL_MAJOR >= 2
-    TESTCHECK(InitData(sendbuffs[i], maxBytes, ncclUint8, 0, i));
+    TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
 #else
-    TESTCHECK(InitData(sendbuffs[i], maxBytes, ncclChar, 0, i));
+    TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclChar, 0, i));
 #endif
     HIPCHECK(hipDeviceSynchronize());
   }
