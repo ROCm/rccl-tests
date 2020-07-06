@@ -67,7 +67,10 @@ testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   size_t rankOffset = count * wordSize(type);
   if (count == 0) return testSuccess;
 
-#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 7
+#if NCCL_MAJOR < 2 || NCCL_MINOR < 7
+  printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+  return testNcclError;
+#else
 #if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
   NCCLCHECK(ncclAllToAll(sendbuff, recvbuff, count, type, comm, stream));
 #else
@@ -78,9 +81,8 @@ testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   }
   NCCLCHECK(ncclGroupEnd());
 #endif
-#endif
-
   return testSuccess;
+#endif
 }
 
 struct testColl alltoAllTest = {

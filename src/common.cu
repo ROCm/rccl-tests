@@ -352,9 +352,9 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
          printf("%d:%d ", j, dataHost[j]);
        }
        printf("\n");
-       free(dataHost);
        free(expectedHost);
-    //}
+       free(dataHost);
+    }
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
