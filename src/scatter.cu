@@ -66,10 +66,10 @@ testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclR
 }
 
 void ScatterGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
-  double baseBw = (double)(count * typesize * (nranks - 1)) / 1.0E9 / sec;
+  double baseBw = (double)(count * typesize) / 1.0E9 / sec;
 
   *algBw = baseBw;
-  double factor = 1;
+  double factor = ((double)(nranks-1))/((double)(nranks));
   *busBw = baseBw * factor;
 }
 
@@ -81,7 +81,10 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
 
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
-#if NCCL_MAJOR >= 2 && NCCL_MINOR >= 7
+#if NCCL_MAJOR < 2 || NCCL_MINOR < 7
+  printf("NCCL 2.7 or later is needed for scatter. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+  return testNcclError;
+#else
 #if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
   NCCLCHECK(ncclScatter(sendbuff, recvbuff, count, type, root, comm, stream));
 #else
@@ -93,8 +96,8 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
   NCCLCHECK(ncclRecv(recvbuff, count, type, root, comm, stream));
   NCCLCHECK(ncclGroupEnd());
 #endif
-#endif
   return testSuccess;
+#endif
 }
 
 struct testColl scatterTest = {
