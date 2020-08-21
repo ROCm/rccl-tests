@@ -55,6 +55,7 @@ static int blocking_coll = 0;
 static int memorytype = 0;
 static int stress_cycles = 1;
 static ncclResult_t ncclabort = ncclSuccess;
+static uint32_t cumask[4];
 
 double parsesize(char *value) {
     long long int units;
@@ -687,12 +688,13 @@ int main(int argc, char* argv[]) {
     {"blocking", required_argument, 0, 'z'},
     {"memory_type", required_argument, 0, 'y'},
     {"stress_cycles", required_argument, 0, 's'},
+    {"cumask", required_argument, 0, 'u'},
     {"help", no_argument, 0, 'h'}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:s:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:y:s:u:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -753,6 +755,16 @@ int main(int argc, char* argv[]) {
       case 's':
         stress_cycles = strtol(optarg, NULL, 0);
         break;
+      case 'u':
+        {
+          int nmasks = 0;
+          char *mask = strtok(optarg, ",");
+          while (mask != NULL && nmasks < 4) {
+            cumask[nmasks++] = strtol(mask, NULL, 16);
+            mask = strtok(NULL, ",");
+          };
+        }
+        break;
       case 'h':
 	printf("USAGE: %s \n\t"
             "[-t,--nthreads <num threads>] \n\t"
@@ -771,6 +783,8 @@ int main(int argc, char* argv[]) {
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
             "[-y,--memory_type <coarse/fine/host>] \n\t"
+            "[-s,--stress_cycles <number of cycles>] \n\t"
+            "[-u,--cumask <d0,d1,d2,d3>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -793,6 +807,8 @@ int main(int argc, char* argv[]) {
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
             "[-y,--memory_type <coarse/fine/host>] \n\t"
+            "[-s,--stress_cycles <number of cycles>] \n\t"
+            "[-u,--cumask <d0,d1,d2,d3>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -882,7 +898,13 @@ testResult_t run() {
   for (int i=0; i<nGpus*nThreads; i++) {
     HIPCHECK(hipSetDevice(localRank*nThreads*nGpus+i));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
-    HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+    if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
+      PRINT("cumask: ");
+      for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
+      PRINT("\n");
+      HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
+    } else
+      HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
     // initialize data buffer to avoid all zero data
 #if NCCL_MAJOR >= 2
     TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
