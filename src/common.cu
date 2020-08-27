@@ -128,7 +128,7 @@ void deltaKern(void* A_, void* B_, size_t count, double* max) {
     double delta = absDiff(A[i], B[i]);
     if( delta > locmax ) {
       locmax = delta;
-#ifdef DEBUG_PRINT
+#if 0
       if (delta > .1) printf("Error at %d/%ld : %f != %f\n", i, count, toFloat(A[i]), toFloat(B[i]));
 #endif
     }
@@ -339,23 +339,30 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
 #ifdef DEBUG_PRINT
     //if (rank == 0) {
-       int *expectedHost = (int *)malloc(args->expectedBytes);
-       int *dataHost = (int *)malloc(args->expectedBytes);
+      int *expectedHost = (int *)malloc(args->expectedBytes);
+      int *dataHost = (int *)malloc(args->expectedBytes);
 
-       hipMemcpy(expectedHost, args->expected[rank], args->expectedBytes, hipMemcpyDeviceToHost);
-       printf("\n Rank [%d] Expected: ", rank);
-       for(int j=0; j<args->expectedBytes/sizeof(int); j++) {
-         printf("%d:%d ", j, expectedHost[j]);
-       }
-       hipMemcpy(dataHost, data, args->expectedBytes, hipMemcpyDeviceToHost);
-       printf("\n Rank [%d] Actual: ", rank);
-       for (int j=0; j<args->expectedBytes/sizeof(int); j++) {
-         printf("%d:%d ", j, dataHost[j]);
-       }
-       printf("\n");
-       free(expectedHost);
-       free(dataHost);
-    }
+      hipMemcpy(expectedHost, args->expected[rank], args->expectedBytes, hipMemcpyDeviceToHost);
+      hipMemcpy(dataHost, data, args->expectedBytes, hipMemcpyDeviceToHost);
+      int j, k, l;
+      for (j=0; j<args->expectedBytes/sizeof(int); j++)
+        if (expectedHost[j] != dataHost[j]) break;
+      k = j;
+      for (; j<args->expectedBytes/sizeof(int); j++)
+        if (expectedHost[j] == dataHost[j]) break;
+      l = j;
+      printf("\n Rank [%d] Expected: ", rank);
+      for (j=k; j<args->expectedBytes/sizeof(int) && j<l; j++) {
+        printf("%d:%d ", j, expectedHost[j]);
+      }
+      printf("\n Rank [%d] Actual  : ", rank);
+      for (j=k; j<args->expectedBytes/sizeof(int) && j<l; j++) {
+        printf("%d:%d ", j, dataHost[j]);
+      }
+      printf("\n");
+      free(expectedHost);
+      free(dataHost);
+    //}
 #endif
   }
   double nranks = args->nProcs*args->nThreads*args->nGpus;
