@@ -123,6 +123,9 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   printf("NCCL 2.7 or later is needed for alltoallv. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
   return testNcclError;
 #else
+#if defined(RCCL_ALLTOALLV) && defined(USE_RCCL_GATHER_SCATTER)
+  NCCLCHECK(ncclAllToAllv(sendbuff, sendcounts, sdispls, recvbuff, recvcounts, rdispls, type, comm, stream));
+#else
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nranks; r++) {
     if (sendcounts[r] != 0) {
@@ -145,6 +148,7 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
     }
   }
   NCCLCHECK(ncclGroupEnd());
+#endif
   return testSuccess;
 #endif
 }
