@@ -14,13 +14,19 @@ DEBUG ?= 0
 HIPCC = $(ROCM_HOME)/hip/bin/hipcc
 CXX = $(HIPCC)
 
-
 HIPCUFLAGS := -std=c++14
+LDFLAGS    :=
+HIPLDFLAGS :=
+
+ifneq ($(NCCL_HOME), "")
+HIPCUFLAGS += -I$(NCCL_HOME)
+HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
+endif
 HIPCUFLAGS += -I$(ROCM_HOME)/include
 HIPCUFLAGS += -I$(ROCM_HOME)/include/rccl
 HIPCUFLAGS += -I$(ROCM_HOME)/hip/include/hip
-LDFLAGS    := -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
-HIPLDFLAGS := $(CUSTOM_RCCL_LIB) -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
+LDFLAGS    += -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
+HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
 
 ifeq ($(DEBUG), 0)
 HIPCUFLAGS += -O3
@@ -35,10 +41,6 @@ endif
 .PHONY: build clean
 
 BUILDDIR ?= ../build
-ifneq ($(NCCL_HOME), "")
-HIPCUFLAGS += -I$(NCCL_HOME)/include/
-HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME)/lib -L$(NCCL_HOME)/lib
-endif
 
 ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
