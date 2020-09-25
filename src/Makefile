@@ -10,6 +10,7 @@ MPI_HOME ?= /usr/lib/openmpi
 PREFIX ?= /usr/local
 VERBOSE ?= 0
 DEBUG ?= 0
+NCCL_HOME ?= ""
 
 HIPCC = $(ROCM_HOME)/hip/bin/hipcc
 CXX = $(HIPCC)
