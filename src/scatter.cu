@@ -86,7 +86,10 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
   return testNcclError;
 #else
 #if defined(RCCL_GATHER_SCATTER) && defined(USE_RCCL_GATHER_SCATTER)
-  NCCLCHECK(ncclScatter(sendbuff, recvbuff, count, type, root, comm, stream));
+  if (rank == root)
+    NCCLCHECK(ncclScatter(sendbuff, recvbuff, count, type, root, comm, stream));
+  else
+    NCCLCHECK(ncclScatter(0, recvbuff, count, type, root, comm, stream));
 #else
   NCCLCHECK(ncclGroupStart());
   if (rank == root) {
