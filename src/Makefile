@@ -48,7 +48,7 @@ HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
 HIPLDFLAGS += -L${MPI_HOME}/lib -lmpi
 else ifeq ($(MPICH), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I/usr/include/mpich
-HIPLDFLAGS += -L/usr/lib -lmpi
+HIPLDFLAGS += -L/usr/lib -lmpich
 endif
 
 LIBRARIES += rccl
