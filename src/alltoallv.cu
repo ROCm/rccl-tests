@@ -101,7 +101,7 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
   #define MAX_ALLTOALLV_RANKS 256
-  static size_t sendcounts[MAX_ALLTOALLV_RANKS], recvcounts[MAX_ALLTOALLV_RANKS], sdispls[MAX_ALLTOALLV_RANKS], rdispls[MAX_ALLTOALLV_RANKS];
+  static size_t sendcounts[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], recvcounts[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], sdispls[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], rdispls[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS];
   if (count == 0) return testSuccess;
   if (nranks > MAX_ALLTOALLV_RANKS) {
     printf("Number of ranks %d exceeds limit %d\n", nranks, MAX_ALLTOALLV_RANKS);
@@ -114,9 +114,10 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
       size_t scount = ((i+rank)%nranks)*chunksize;
       if (i+rank == nranks-1)
           scount += (count*nranks-chunksize*(nranks-1)*nranks/2);
-      sendcounts[i] = recvcounts[i] = scount;
-      sdispls[i] = rdispls[i] = disp;
+      sendcounts[i+rank*MAX_ALLTOALLV_RANKS] = recvcounts[i+rank*MAX_ALLTOALLV_RANKS] = scount;
+      sdispls[i+rank*MAX_ALLTOALLV_RANKS] = rdispls[i+rank*MAX_ALLTOALLV_RANKS] = disp;
       disp += scount;
+      //printf("%d->%d: sendcounts/recvcounts %lx sdispls/rdispls %lx\n", rank, i, sendcounts[i+rank*MAX_ALLTOALLV_RANKS]*wordSize(type), sdispls[i+rank*MAX_ALLTOALLV_RANKS]*wordSize(type));
   }
 
 #if NCCL_MAJOR < 2 || NCCL_MINOR < 7
@@ -124,23 +125,23 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   return testNcclError;
 #else
 #if defined(RCCL_ALLTOALLV) && defined(USE_RCCL_GATHER_SCATTER)
-  NCCLCHECK(ncclAllToAllv(sendbuff, sendcounts, sdispls, recvbuff, recvcounts, rdispls, type, comm, stream));
+  NCCLCHECK(ncclAllToAllv(sendbuff, sendcounts+rank*MAX_ALLTOALLV_RANKS, sdispls+rank*MAX_ALLTOALLV_RANKS, recvbuff, recvcounts+rank*MAX_ALLTOALLV_RANKS, rdispls+rank*MAX_ALLTOALLV_RANKS, type, comm, stream));
 #else
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nranks; r++) {
-    if (sendcounts[r] != 0) {
+    if (sendcounts[r+rank*MAX_ALLTOALLV_RANKS] != 0) {
       NCCLCHECK(ncclSend(
-          ((char*)sendbuff) + sdispls[r] * wordSize(type),
-          sendcounts[r],
+          ((char*)sendbuff) + sdispls[r+rank*MAX_ALLTOALLV_RANKS] * wordSize(type),
+          sendcounts[r+rank*MAX_ALLTOALLV_RANKS],
           type,
           r,
           comm,
           stream));
     }
-    if (recvcounts[r] != 0) {
+    if (recvcounts[r+rank*MAX_ALLTOALLV_RANKS] != 0) {
       NCCLCHECK(ncclRecv(
-          ((char*)recvbuff) + rdispls[r] * wordSize(type),
-          recvcounts[r],
+          ((char*)recvbuff) + rdispls[r+rank*MAX_ALLTOALLV_RANKS] * wordSize(type),
+          recvcounts[r+rank*MAX_ALLTOALLV_RANKS],
           type,
           r,
           comm,
