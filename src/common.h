@@ -212,7 +212,8 @@ extern const char *test_opnames[ncclNumOps];
 typedef enum { ncclCoarse        = 0,
                ncclFine          = 1,
                ncclHost          = 2,
-               nccl_NUM_MTYPES   = 3 } ncclMemoryType_t;
+               ncclManaged       = 3,
+               nccl_NUM_MTYPES   = 4 } ncclMemoryType_t;
 extern const char *test_memorytypes[nccl_NUM_MTYPES];
 
 static int ncclstringtotype(char *str) {

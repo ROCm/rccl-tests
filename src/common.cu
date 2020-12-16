@@ -32,7 +32,7 @@ const char *test_typenames[ncclNumTypes] = {"char", "int", "half", "float", "dou
 #endif
 ncclRedOp_t test_ops[ncclNumOps] = {ncclSum, ncclProd, ncclMax, ncclMin};
 const char *test_opnames[ncclNumOps] = {"sum", "prod", "max", "min"};
-const char *test_memorytypes[nccl_NUM_MTYPES] = {"coarse", "fine", "host"};
+const char *test_memorytypes[nccl_NUM_MTYPES] = {"coarse", "fine", "host", "managed"};
 
 thread_local int is_main_thread = 0;
 
@@ -655,6 +655,11 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     HIPCHECK(hipHostMalloc(recvbuff, nbytes));
     HIPCHECK(hipHostMalloc(expected, recvBytes));
   }
+  else if (memorytype == ncclManaged) {
+    HIPCHECK(hipMallocManaged(sendbuff, nbytes));
+    HIPCHECK(hipMallocManaged(recvbuff, nbytes));
+    HIPCHECK(hipMallocManaged(expected, recvBytes));
+  }
   else {
     HIPCHECK(hipMalloc(sendbuff, nbytes));
     HIPCHECK(hipMalloc(recvbuff, nbytes));
@@ -813,7 +818,7 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
-            "[-y,--memory_type <coarse/fine/host>] \n\t"
+            "[-y,--memory_type <coarse/fine/host/managed>] \n\t"
             "[-s,--stress_cycles <number of cycles>] \n\t"
             "[-u,--cumask <d0,d1,d2,d3>] \n\t"
             "[-h,--help]\n",
