@@ -659,6 +659,11 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     HIPCHECK(hipMallocManaged(sendbuff, nbytes));
     HIPCHECK(hipMallocManaged(recvbuff, nbytes));
     HIPCHECK(hipMallocManaged(expected, recvBytes));
+#if 0
+    HIPCHECK(hipMemset(*sendbuff, 0, nbytes));
+    HIPCHECK(hipMemset(*recvbuff, 0, nbytes));
+    HIPCHECK(hipMemset(*expected, 0, recvBytes));
+#endif
   }
   else {
     HIPCHECK(hipMalloc(sendbuff, nbytes));
@@ -910,6 +915,7 @@ testResult_t run() {
   for (int i=0; i<nGpus*nThreads; i++) {
     HIPCHECK(hipSetDevice(localRank*nThreads*nGpus+i));
     AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus);
+    //PRINT("sendbuffs[%d]=%p(size=%lu) recvbuffs[%d]=%p(size=%lu)\n", i, sendbuffs[i], sendBytes, i, recvbuffs[i], recvBytes);
     if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
       PRINT("cumask: ");
       for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
