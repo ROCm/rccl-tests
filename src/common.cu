@@ -13,7 +13,6 @@
 #include <cstdio>
 #include <getopt.h>
 #include <libgen.h>
-#include <signal.h>
 #include <algorithm>
 
 //#define DEBUG_PRINT
@@ -54,7 +53,6 @@ static int parallel_init = 0;
 static int blocking_coll = 0;
 static int memorytype = 0;
 static int stress_cycles = 1;
-static ncclResult_t ncclabort = ncclSuccess;
 static uint32_t cumask[4];
 
 double parsesize(char *value) {
@@ -371,21 +369,6 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   return testSuccess;
 }
 
-void INThandler(int sig) {
-  char  c;
-
-  signal(sig, SIG_IGN);
-  printf("\nDo you want to call ncclCommAbort before exit? [y/n] ");
-  c = getchar();
-  if (c == 'y' || c == 'Y') {
-    ncclabort = ncclSystemError;
-    signal(SIGINT, INThandler);
-  }
-  else
-    exit (0);
-  getchar(); // Get new line character
-}
-
 testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* comms) {
   hipError_t hipErr;
   int remaining = ngpus;
@@ -411,17 +394,13 @@ testResult_t testStreamSynchronize(int ngpus, hipStream_t* streams, ncclComm_t* 
      if (comms) {
        ncclResult_t ncclAsyncErr;
        NCCLCHECK(ncclCommGetAsyncError(comms[i], &ncclAsyncErr));
-       if (ncclAsyncErr != ncclSuccess || ncclabort != ncclSuccess) {
+       if (ncclAsyncErr != ncclSuccess) {
          // An asynchronous error happened. Stop the operation and destroy
          // the communicator
          for (int i=0; i<ngpus; i++)
            NCCLCHECK(ncclCommAbort(comms[i]));
-         // Let all kernels to exit
-         for (int i=0; i<ngpus; i++)
-           HIPCHECK(hipStreamSynchronize(streams[i]));
          // Abort the perf test
          NCCLCHECK(ncclAsyncErr);
-         NCCLCHECK(ncclabort);
        }
      }
 #endif
@@ -676,12 +655,6 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
 testResult_t run(); // Main function
 
 int main(int argc, char* argv[]) {
-#if NCCL_MAJOR >= 2
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
-  // may call ncclCommAbort
-  signal(SIGINT, INThandler);
-#endif
-#endif
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
 
