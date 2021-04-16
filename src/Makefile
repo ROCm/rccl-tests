@@ -47,7 +47,7 @@ ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
 HIPLDFLAGS += -L${MPI_HOME}/lib -lmpi
 else ifeq ($(MPICH), 1)
-HIPCUFLAGS += -DMPI_SUPPORT -I/usr/include/mpich
+HIPCUFLAGS += -DMPI_SUPPORT -I/usr/include/mpich -I/usr/include/x86_64-linux-gnu/mpich
 HIPLDFLAGS += -L/usr/lib -lmpich
 endif
 
