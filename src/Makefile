@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
 # Modifications are Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
@@ -57,7 +57,7 @@ HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv alltoallv
+BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv alltoallv hypercube
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
 build: ${BIN_FILES}

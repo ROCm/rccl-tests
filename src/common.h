@@ -9,6 +9,7 @@
 
 #include "rccl.h"
 #include <stdio.h>
+#include <cstdint>
 #include <algorithm>
 #ifdef MPI_SUPPORT
 #include "mpi.h"
@@ -54,8 +55,8 @@ typedef enum {
   if (r!= testSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf(" .. %s: Test failure %s:%d\n",          \
-         hostname,                                  \
+    printf(" .. %s pid %d: Test failure %s:%d\n",   \
+         hostname, getpid(),                        \
         __FILE__,__LINE__);                         \
     return r;                                       \
   }                                                 \
@@ -78,6 +79,7 @@ extern struct testColl allGatherTest;
 extern struct testColl reduceScatterTest;
 extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
+extern struct testColl alltoAllTest;
 
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
@@ -115,11 +117,10 @@ struct threadArgs {
   int sync_idx;
   volatile int* barrier;
   int barrier_idx;
+  volatile double* reduce;
   int syncRank;
   int syncNranks;
-  double* deltaThreads;
   double* deltaHost;
-  double* delta;
   int* errors;
   double* bw;
   int* bw_count;
@@ -213,6 +214,9 @@ static size_t wordSize(ncclDataType_t type) {
 #endif
       return 1;
     case ncclHalf:
+#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
+    case ncclBfloat16:
+#endif
     //case ncclFloat16:
       return 2;
     case ncclInt:
@@ -226,16 +230,13 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclInt64:
     case ncclUint64:
     case ncclDouble:
-    //case ncclFloat64:
+    //case ncclFloat64: 
       return 8;
-#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
-    case ncclBfloat16:
-      return 2;
-#endif
     default: return 0;
   }
 }
 
+extern int test_ncclVersion; // init'd with ncclGetVersion()
 extern ncclDataType_t test_types[ncclNumTypes];
 extern const char *test_typenames[ncclNumTypes];
 extern ncclRedOp_t test_ops[ncclNumOps];
@@ -246,6 +247,8 @@ typedef enum { ncclCoarse        = 0,
                ncclManaged       = 3,
                nccl_NUM_MTYPES   = 4 } ncclMemoryType_t;
 extern const char *test_memorytypes[nccl_NUM_MTYPES];
+extern int test_opnum;
+extern int test_typenum;
 
 static int ncclstringtotype(char *str) {
     for (int t=0; t<ncclNumTypes; t++) {
@@ -261,7 +264,7 @@ static int ncclstringtotype(char *str) {
 }
 
 static int ncclstringtoop (char *str) {
-    for (int o=0; o<ncclNumOps; o++) {
+    for (int o=0; o<test_opnum; o++) {
       if (strcmp(str, test_opnames[o]) == 0) {
         return o;
       }

@@ -52,17 +52,22 @@ All tests support the same set of arguments :
     * `-i,--stepbytes <increment size>` fixed increment between sizes. Default : (max-min)/10.
     * `-f,--stepfactor <increment factor>` multiplication factor between sizes. Default : disabled.
 * RCCL operations arguments
-  * `-o,--op <sum/prod/min/max/all>` Specify which reduction operation to perform. Only relevant for reduction operations like Allreduce, Reduce or ReduceScatter. Default : Sum.
+  * `-o,--op <sum/prod/min/max/avg/all>` Specify which reduction operation to perform. Only relevant for reduction operations like Allreduce, Reduce or ReduceScatter. Default : Sum.
   * `-d,--datatype <nccltype/all>` Specify which datatype to use. Default : Float.
   * `-r,--root <root/all>` Specify which root to use. Only for operations with a root like broadcast or reduce. Default : 0.
+  * `-y,--memory_type <coarse/fine/host/managed>` Default: Coarse
+  * `-s,--stress_cycles <number of cycles>` Default: 1
+  * `-u,--cumask <d0,d1,d2,d3>` Default: None
 * Performance
   * `-n,--iters <iteration count>` number of iterations. Default : 20.
   * `-w,--warmup_iters <warmup iteration count>` number of warmup iterations (not timed). Default : 5.
   * `-m,--agg_iters <aggregation count>` number of operations to aggregate together in each iteration. Default : 1.
+  * `-a,--average <0/1/2/3>` Report performance as an average across all ranks (MPI=1 only). <0=Rank0,1=Avg,2=Min,3=Max>. Default : 1.
 * Test operation
   * `-p,--parallel_init <0/1>` use threads to initialize RCCL in parallel. Default : 0.
   * `-c,--check <0/1>` check correctness of results. This can be quite slow on large numbers of GPUs. Default : 1.
   * `-z,--blocking <0/1>` Make RCCL collective blocking, i.e. have CPUs wait and sync after each collective. Default : 0.
+  * `-G,--cudagraph <num graph launches>` Capture iterations as a CUDA graph and then replay specified number of times. Default : 0.
 
 ## Unit tests
 
@@ -80,7 +85,7 @@ $ LD_LIBRARY_PATH=/path/to/rccl-install/lib/ HSA_FORCE_FINE_GRAIN_PCIE=1 python3
 
 RCCL tests are provided under the BSD license.
 
-All source code and accompanying documentation is copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
+All source code and accompanying documentation is copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
 
 All modifications are copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
 
