@@ -544,6 +544,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   Barrier(args);
 
+#if CUDART_VERSION >= 11030
   hipGraph_t graphs[args->nGpus];
   hipGraphExec_t graphExec[args->nGpus];
   if (cudaGraphLaunches >= 1) {
@@ -552,6 +553,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       HIPCHECK(hipStreamBeginCapture(args->streams[i], args->nThreads > 1 ? hipStreamCaptureModeThreadLocal : hipStreamCaptureModeGlobal));
     }
   }
+#endif
 
   // Performance Benchmark
   auto start = std::chrono::high_resolution_clock::now();
@@ -563,6 +565,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     // End cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
@@ -581,6 +584,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
     }
   }
+#endif
 
   TESTCHECK(completeColl(args));
 
@@ -590,6 +594,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
 
+#if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
     //destroy cuda graph
     for (int i=0; i<args->nGpus; i++) {
@@ -597,6 +602,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       HIPCHECK(hipGraphDestroy(graphs[i]));
     }
   }
+#endif
 
   double algBw, busBw;
   args->collTest->getBw(count, wordSize(type), deltaSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
@@ -611,16 +617,19 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // Begin cuda graph capture for data check
         for (int i=0; i<args->nGpus; i++) {
           HIPCHECK(hipStreamBeginCapture(args->streams[i], hipStreamCaptureModeThreadLocal));
         }
       }
+#endif
 
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         // End cuda graph capture
         for (int i=0; i<args->nGpus; i++) {
@@ -635,9 +644,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           HIPCHECK(hipGraphLaunch(graphExec[i], args->streams[i]));
         }
       }
+#endif
 
       TESTCHECK(completeColl(args));
 
+#if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
         //destroy cuda graph
         for (int i=0; i<args->nGpus; i++) {
@@ -645,6 +656,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           HIPCHECK(hipGraphDestroy(graphs[i]));
         }
       }
+#endif
 
       TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta));
 
