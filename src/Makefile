@@ -5,14 +5,14 @@
 # See LICENSE.txt for license information
 #
 
-ROCM_HOME ?= /opt/rocm
+ROCM_PATH ?= /opt/rocm
 MPI_HOME ?= /usr/lib/openmpi
 PREFIX ?= /usr/local
 VERBOSE ?= 0
 DEBUG ?= 0
 NCCL_HOME ?= ""
 
-HIPCC = $(ROCM_HOME)/hip/bin/hipcc
+HIPCC = $(ROCM_PATH)/hip/bin/hipcc
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
@@ -23,11 +23,11 @@ ifneq ($(NCCL_HOME), "")
 HIPCUFLAGS += -I$(NCCL_HOME)
 HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
 endif
-HIPCUFLAGS += -I$(ROCM_HOME)/include
-HIPCUFLAGS += -I$(ROCM_HOME)/include/rccl
-HIPCUFLAGS += -I$(ROCM_HOME)/hip/include/hip
-LDFLAGS    += -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
-HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_HOME)/lib -lhsa-runtime64 -lrt
+HIPCUFLAGS += -I$(ROCM_PATH)/include
+HIPCUFLAGS += -I$(ROCM_PATH)/include/rccl
+HIPCUFLAGS += -I$(ROCM_PATH)/hip/include/hip
+LDFLAGS    += -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
+HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
 
 ifeq ($(DEBUG), 0)
 HIPCUFLAGS += -O3
