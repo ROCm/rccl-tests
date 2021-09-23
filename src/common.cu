@@ -157,10 +157,10 @@ template<> __device__
 float toFloat(half a) {
   return __half2float(a);
 }
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+#if defined(RCCL_BFLOAT16)
 template<> __device__
-float toFloat(__nv_bfloat16 a) {
-  return __bfloat162float(a);
+float toFloat(rccl_bfloat16 a) {
+  return (float)(a);
 }
 #endif
 
@@ -551,8 +551,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       union {
         int8_t i8; uint8_t u8; int32_t i32; uint32_t u32; int64_t i64; uint64_t u64;
         half f16; float f32; double f64;
-        #if defined(__CUDA_BF16_TYPES_EXIST__)
-        __nv_bfloat16 bf16;
+        #if defined(RCCL_BFLOAT16)
+        rccl_bfloat16 bf16;
         #endif
       };
       int scalar = preMulScalar(rank);
@@ -566,8 +566,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFloat16: f16 = __float2half(float(scalar)); break;
       case ncclFloat32: f32 = float(scalar); break;
       case ncclFloat64: f64 = double(scalar); break;
-      #if defined(__CUDA_BF16_TYPES_EXIST__)
-      case ncclBfloat16: bf16 = __float2bfloat16(float(scalar)); break;
+      #if defined(RCCL_BFLOAT16)
+      case ncclBfloat16: bf16 = (rccl_bfloat16)(float(scalar)); break;
       #endif
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
@@ -892,7 +892,7 @@ int main(int argc, char* argv[]) {
     test_typenum = 9;
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
       test_opnum++; // ncclAvg
-      #if defined(__CUDA_BF16_TYPES_EXIST__)
+      #if defined(RCCL_BFLOAT16)
         test_typenum++; // bfloat16
       #endif
     }
