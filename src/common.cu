@@ -1268,6 +1268,10 @@ testResult_t run() {
     free(comms);
   }
 
+  for (int i=0; i<nGpus*nThreads; i++) {
+    HIPCHECK(hipStreamDestroy(streams[i]));
+  }
+
   // Free off HIP allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
     if (memorytype == ncclHost) {
