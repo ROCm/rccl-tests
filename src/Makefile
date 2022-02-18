@@ -43,7 +43,7 @@ endif
 BUILDDIR ?= ../build
 HIPIFY_DIR ?= $(BUILDDIR)/hipify
 
-.PRECIOUS: $(HIPIFY_DIR)/%.cu.cpp $(HIPIFY_DIR)/%.h
+.PRECIOUS: $(HIPIFY_DIR)/%.cpp $(HIPIFY_DIR)/%.h
 
 ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
@@ -57,8 +57,8 @@ LIBRARIES += rccl
 HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 
 DST_DIR := $(BUILDDIR)
-SRC_FILES := $(wildcard *.cu)
-OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
+SRC_FILES := $(wildcard *.cpp)
+OBJ_FILES := $(SRC_FILES:%.cpp=${DST_DIR}/%.o)
 BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
@@ -81,7 +81,7 @@ $(GIT_VERSION_FILE):
 	@mkdir -p ${DST_DIR}/src
 	@echo 'const char* rcclTestsGitHash = "$(GIT_BRANCH):$(GIT_REV)$(GIT_DIFF)";' > $@
 
-${HIPIFY_DIR}/%.cu.cpp: %.cu
+${HIPIFY_DIR}/%.cpp: %.cpp
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
@@ -91,7 +91,7 @@ ${HIPIFY_DIR}/%.h: %.h
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
 
-${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS) $(GIT_VERSION_FILE)
+${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS) $(GIT_VERSION_FILE)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -I. -c $<"

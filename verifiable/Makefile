@@ -67,7 +67,7 @@ include verifiable.mk
 
 self_test: $(DST_DIR)/self_test
 
-$(DST_DIR)/self_test: verifiable.cu verifiable.h
+$(DST_DIR)/self_test: verifiable.cpp verifiable.h
 	@printf "Linking  %s\n" $@
 	@mkdir -p $(DST_DIR)
-	$(HIPCC) -o $@ $(HIPCUFLAGS) -DSELF_TEST=1 verifiable.cu $(HIPLDFLAGS)
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -DSELF_TEST=1 verifiable.cpp $(HIPLDFLAGS)
