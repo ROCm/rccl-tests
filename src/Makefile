@@ -20,7 +20,7 @@ LDFLAGS    :=
 HIPLDFLAGS :=
 
 ifneq ($(NCCL_HOME), "")
-HIPCUFLAGS += -I$(NCCL_HOME)
+HIPCUFLAGS += -I$(NCCL_HOME) -I$(NCCL_HOME)/rccl/include
 HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
 endif
 HIPCUFLAGS += -I$(ROCM_PATH)/include
