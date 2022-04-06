@@ -1114,8 +1114,10 @@ testResult_t run() {
     int rank = proc*nThreads*nGpus+i;
     hipDeviceProp_t prop;
     HIPCHECK(hipGetDeviceProperties(&prop, hipDev));
-    len += snprintf(line+len, MAX_LINE>len ? MAX_LINE-len : 0, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, getpid(), hostname, hipDev, prop.pciBusID, prop.name);
+    char busIdStr[] = "00000000:00:00.0";
+    HIPCHECK(hipDeviceGetPCIBusId(busIdStr, sizeof(busIdStr), hipDev));
+    len += snprintf(line+len, MAX_LINE>len ? MAX_LINE-len : 0, "#   Rank %2d Pid %6d on %10s device %2d [%s] %s\n",
+                    rank, getpid(), hostname, hipDev, busIdStr, prop.name);
     maxMem = std::min(maxMem, prop.totalGlobalMem);
   }
 
