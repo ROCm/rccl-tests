@@ -33,17 +33,24 @@ void HyperCubeGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
 testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
   size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus;
+  int nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
 
+  int k=0;
   for (int i=0; i<args->nGpus; i++) {
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    if (args->enable_multiranks)
+      gpuid = gpuid % args->localNumDevices;
     HIPCHECK(hipSetDevice(gpuid));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
-    for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes*j, sendcount, type, rep, j));
+
+    for (int l=0; l<args->nRanks; l++) {
+      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
+      HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
+      void* data = in_place ? ((char*)args->recvbuffs[k])+rank*args->sendBytes : args->sendbuffs[k];
+      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      for (int j=0; j<nranks; j++) {
+	TESTCHECK(InitData(((char*)args->expected[k])+args->sendBytes*j, sendcount, type, rep, j));
+      }
+      k++;
     }
     HIPCHECK(hipDeviceSynchronize());
   }
@@ -66,7 +73,6 @@ testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
   size_t rankSize = count * wordSize(type);
-
   if (rbuff+rank*rankSize != sbuff) HIPCHECK(hipMemcpyAsync(rbuff+rank*rankSize, sbuff, rankSize, hipMemcpyDeviceToDevice, stream));
 
   // Hypercube AllGather

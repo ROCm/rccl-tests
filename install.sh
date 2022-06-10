@@ -67,6 +67,14 @@ while true; do
     esac
     done
 
+# throw error code after running a command in the install script
+check_exit_code( )
+{
+  if (( $1 != 0 )); then
+    exit $1
+  fi
+}
+
 # Install the pre-commit hook
 #bash ./githooks/install
 
@@ -87,6 +95,7 @@ if ($mpi_enabled); then
 else
     make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so -j$(nproc)
 fi
+check_exit_code "$?"
 
 # Optionally, run tests if they're enabled.
 if ($run_tests); then

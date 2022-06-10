@@ -102,6 +102,9 @@ struct threadArgs {
   int thread;
   int nGpus;
   int localRank;
+  int localNumDevices;
+  int enable_multiranks;
+  int nRanks;
   void** sendbuffs;
   size_t sendBytes;
   size_t sendInplaceOffset;
