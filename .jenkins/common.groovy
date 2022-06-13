@@ -27,6 +27,8 @@ def runTestCommand (platform, project)
     def command = """#!/usr/bin/env bash
                 set -x
                 cd ${project.paths.project_build_prefix}
+		python3 -m pip install --upgrade pytest
+		python3 -m pytest --version
 		python3 -m pytest -k "not MPI and not host and not fine" --verbose --junitxml=./testreport.xml
             """
 
