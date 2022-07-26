@@ -51,6 +51,8 @@ HIPCUFLAGS += -DMPI_SUPPORT -I/usr/include/mpich -I/usr/include/x86_64-linux-gnu
 HIPLDFLAGS += -L/usr/lib -lmpich
 endif
 
+HIPCUFLAGS += --amdgpu-target=gfx803 --amdgpu-target=gfx900:xnack- --amdgpu-target=gfx906:xnack- --amdgpu-target=gfx908:xnack- --amdgpu-target=gfx90a:xnack- --amdgpu-target=gfx90a:xnack+ --amdgpu-target=gfx1030
+
 LIBRARIES += rccl
 HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 
