@@ -16,7 +16,7 @@ def runCompileCommand(platform, project, jobName)
                 cmake \
                     -DCMAKE_CXX_COMPILER=/opt/rocm/hip/bin/hipcc \
                     -S . -B build
-                ${project.paths.build_command}
+                make -C build -j\$(nproc)
                 ${auxiliary.exitIfNotSuccess()}
             """
 
