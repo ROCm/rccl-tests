@@ -13,6 +13,9 @@ def runCompileCommand(platform, project, jobName)
                 ${getRCCL}
                 ${auxiliary.exitIfNotSuccess()}
                 cd ${project.paths.project_build_prefix}
+                cmake \
+                    -DCMAKE_CXX_COMPILER=/opt/rocm/hip/bin/hipcc \
+                    -S . -B build
                 ${project.paths.build_command}
                 ${auxiliary.exitIfNotSuccess()}
             """
