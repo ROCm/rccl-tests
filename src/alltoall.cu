@@ -31,18 +31,25 @@ void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *para
 testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
   size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus;
+  int nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
 
+  int k=0;
   for (int i=0; i<args->nGpus; i++) {
     char* str = getenv("NCCL_TESTS_DEVICE");
     int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    if (args->enable_multiranks)
+      gpuid = gpuid % args->localNumDevices;
     HIPCHECK(hipSetDevice(gpuid));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
-    for (int j=0; j<nranks; j++) {
-      TESTCHECK(InitData(((char*)args->expected[i])+args->sendBytes/nranks*j, sendcount/nranks, type, rep+rank*sendcount/nranks, j));
+
+    for (int l=0; l<args->nRanks; l++) {
+      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
+      HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
+      void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
+      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      for (int j=0; j<nranks; j++) {
+	TESTCHECK(InitData(((char*)args->expected[k])+args->sendBytes/nranks*j, sendcount/nranks, type, rep+rank*sendcount/nranks, j));
+      }
+      k++;
     }
     HIPCHECK(hipDeviceSynchronize());
   }
@@ -60,23 +67,8 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
-  int nRanks;
-  NCCLCHECK(ncclCommCount(comm, &nRanks));
-  size_t rankOffset = count * wordSize(type);
-  if (count == 0) return testSuccess;
-
-#if NCCL_MAJOR < 2 || NCCL_MINOR < 7
-  printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
-  return testNcclError;
-#else
-  NCCLCHECK(ncclGroupStart());
-  for (int r=0; r<nRanks; r++) {
-    NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
-    NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
-  }
-  NCCLCHECK(ncclGroupEnd());
+  NCCLCHECK(ncclAllToAll(sendbuff, recvbuff, count, type, comm, stream));
   return testSuccess;
-#endif
 }
 
 struct testColl alltoAllTest = {

@@ -31,17 +31,24 @@ void SendRecvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *para
 testResult_t SendRecvInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
   size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus;
+  int nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
 
+  int k=0;
   for (int i=0; i<args->nGpus; i++) {
     int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
+    if (args->enable_multiranks)
+      gpuid = gpuid % args->localNumDevices;
     HIPCHECK(hipSetDevice(gpuid));
-    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
-    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
-    TESTCHECK(InitData(data, sendcount, type, rep, rank));
-    int peer = (rank-1+nranks)%nranks;
-    TESTCHECK(InitData(args->expected[i], recvcount, type, rep, peer));
+
+    for (int l=0; l<args->nRanks; l++) {
+      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
+      HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
+      void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
+      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      int peer = (rank-1+nranks)%nranks;
+      TESTCHECK(InitData(args->expected[k], recvcount, type, rep, peer));
+      k++;
+    }
     HIPCHECK(hipDeviceSynchronize());
   }
   // We don't support in-place sendrecv
