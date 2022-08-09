@@ -1250,7 +1250,7 @@ testResult_t run() {
     HIPCHECK(hipSetDevice(gpuid));
     for (int j=0; j<ranksPerGpu; j++) {
       int i = ii*ranksPerGpu+j;
-      AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus*ranksPerGpu);
+      TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus*ranksPerGpu));
       //PRINT("sendbuffs[%d]=%p(size=%lu) recvbuffs[%d]=%p(size=%lu)\n", i, sendbuffs[i], sendBytes, i, recvbuffs[i], recvBytes);
       if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
 	PRINT("cumask: ");
