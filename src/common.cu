@@ -651,7 +651,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   Barrier(args);
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
   hipGraph_t graphs[args->nGpus*args->nRanks];
   hipGraphExec_t graphExec[args->nGpus*args->nRanks];
   if (cudaGraphLaunches >= 1) {
@@ -675,7 +675,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
   if (cudaGraphLaunches >= 1) {
     // End cuda graph capture
     for (int i=0; i<args->nGpus*args->nRanks; i++) {
@@ -704,7 +704,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
   if (cudaGraphLaunches >= 1) {
     //destroy cuda graph
     for (int i=0; i<args->nGpus*args->nRanks; i++) {
@@ -727,7 +727,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
       if (cudaGraphLaunches >= 1) {
         // Begin cuda graph capture for data check
         for (int i=0; i<args->nGpus*args->nRanks; i++) {
@@ -739,7 +739,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       //test validation in single itertion, should ideally be included into the multi-iteration run
       TESTCHECK(startColl(args, type, op, root, in_place, 0));
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
       if (cudaGraphLaunches >= 1) {
         // End cuda graph capture
         for (int i=0; i<args->nGpus*args->nRanks; i++) {
@@ -758,7 +758,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
       TESTCHECK(completeColl(args));
 
-#if CUDART_VERSION >= 11030
+#if HIP_VERSION >= 50221310
       if (cudaGraphLaunches >= 1) {
         //destroy cuda graph
         for (int i=0; i<args->nGpus*args->nRanks; i++) {
@@ -1069,10 +1069,10 @@ int main(int argc, char* argv[]) {
         }
         break;
       case 'G':
-#if (NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)) && CUDART_VERSION >= 11030
+#if (NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)) && HIP_VERSION >= 50221310
         cudaGraphLaunches = strtol(optarg, NULL, 0);
 #else
-        printf("Option -G (CUDA graph) not supported before NCCL 2.9 + CUDA 11.3. Ignoring\n");
+        printf("Option -G (HIP graph) not supported before NCCL 2.9 + ROCm 5.2 Ignoring\n");
 #endif
         break;
       case 'a':
