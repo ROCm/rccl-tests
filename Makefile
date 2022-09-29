@@ -8,7 +8,7 @@
 
 default : src.build
 
-TARGETS=src
+TARGETS=$(filter-out src/hypercube.cu, $(wildcard src/*))
 
 all:   ${TARGETS:%=%.build}
 clean: ${TARGETS:%=%.clean}
