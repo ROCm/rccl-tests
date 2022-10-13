@@ -81,6 +81,7 @@ static int average = 1;
 static int numDevices = 1;
 static int ranksPerGpu = 1;
 static int enable_multiranks = 0;
+static int delay_inout_place = 0;
 
 #define NUM_BLOCKS 32
 
@@ -645,9 +646,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
   }
 
-  // Sync
-  TESTCHECK(startColl(args, type, op, root, in_place, 0));
-  TESTCHECK(completeColl(args));
+  if (warmup_iters) {
+    // Sync
+    TESTCHECK(startColl(args, type, op, root, in_place, 0));
+    TESTCHECK(completeColl(args));
+  }
 
   Barrier(args);
 
@@ -830,6 +833,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         setupArgs(size, type, args);
         print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
         TESTCHECK(BenchTime(args, type, op, root, 0));
+        usleep(delay_inout_place);
         TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
     }
@@ -984,9 +988,9 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 #ifdef RCCL_MULTIRANKPERGPU
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:R:x:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:R:x:q:", longopts, &longindex);
 #else
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:q:", longopts, &longindex);
 #endif
 
     if (c == -1)
@@ -1086,6 +1090,9 @@ int main(int argc, char* argv[]) {
         ranksPerGpu = (int)strtol(optarg, NULL, 0);
         break;
 #endif
+      case 'q':
+        delay_inout_place = (int)strtol(optarg, NULL, 10);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1120,6 +1127,7 @@ int main(int argc, char* argv[]) {
             "[-x,--enable_multiranks <0/1> enable using multiple ranks per GPU] \n\t"
             "[-R,--ranks_per_gpu] \n\t"
 #endif
+            "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-h,--help]\n",
 	    basename(argv[0]));
 	return 0;
@@ -1253,14 +1261,14 @@ testResult_t run() {
       TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus*ranksPerGpu));
       //PRINT("sendbuffs[%d]=%p(size=%lu) recvbuffs[%d]=%p(size=%lu)\n", i, sendbuffs[i], sendBytes, i, recvbuffs[i], recvBytes);
       if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
-	PRINT("cumask: ");
-	for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
-	PRINT("\n");
-	HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
+        PRINT("cumask: ");
+        for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
+        PRINT("\n");
+        HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
       } else
-	HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+        HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
       // initialize data buffer to avoid all zero data
-      TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
+      if (datacheck) TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
     }
     HIPCHECK(hipDeviceSynchronize());
   }
