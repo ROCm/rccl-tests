@@ -1,6 +1,6 @@
 /*************************************************************************
- * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
- * Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,24 +8,15 @@
 #include <hip/hip_runtime.h>
 #include "common.h"
 
-void print_header() {
-  PRINT("# %10s  %12s  %8s  %6s            out-of-place                       in-place          \n", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type", "redop",
-        "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
-  PRINT("# %10s  %12s  %8s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %8s  %6s", size, count, typeName, opName);
-}
+#define ALIGN 4
 
 void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
-  *sendcount = (count/nranks)*nranks;
-  *recvcount = count/nranks;
+  size_t base = (count/(ALIGN*nranks))*ALIGN;
+  *sendcount = base*nranks;
+  *recvcount = base;
   *sendInplaceOffset = 0;
-  *recvInplaceOffset = count/nranks;
-  *paramcount = *recvcount;
+  *recvInplaceOffset = base;
+  *paramcount = base;
 }
 
 testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
@@ -35,16 +26,13 @@ testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type,
 
   int k=0;
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (args->enable_multiranks)
-      gpuid = gpuid % args->localNumDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int l=0; l<args->nRanks; l++) {
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
       HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
       void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      TESTCHECK(InitData(data, sendcount, 0, type, op, rep, nranks, rank));
       HIPCHECK(hipMemcpy(args->expected[k], args->recvbuffs[k], args->expectedBytes, hipMemcpyDefault));
       TESTCHECK(InitDataReduce(args->expected[k], recvcount, rank*recvcount, type, op, rep, nranks));
       k++;
