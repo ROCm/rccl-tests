@@ -7,7 +7,7 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include "rccl.h"
+#include "rccl/rccl.h"
 #include <stdio.h>
 #include <cstdint>
 #include <algorithm>
@@ -21,14 +21,14 @@
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
 
-#define HIPCHECK(cmd) do {                         \
-  hipError_t e = cmd;                              \
-  if( e != hipSuccess ) {                          \
+#define HIPCHECK(cmd) do {                          \
+  hipError_t e = cmd;                               \
+  if( e != hipSuccess ) {                           \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: Test HIP failure %s:%d '%s'\n",    \
+    printf("%s: Test HIP failure %s:%d '%s'\n",     \
          hostname,                                  \
-        __FILE__,__LINE__,hipGetErrorString(e));   \
+        __FILE__,__LINE__,hipGetErrorString(e));    \
     return testCudaError;                           \
   }                                                 \
 } while(0)

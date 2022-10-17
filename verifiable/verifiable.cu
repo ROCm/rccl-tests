@@ -1,15 +1,23 @@
-#pragma nv_diag_suppress declared_but_not_referenced
+/*************************************************************************
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
+//#pragma nv_diag_suppress declared_but_not_referenced
 
 #include "verifiable.h"
-#include <nccl.h>
+#include <hip/hip_runtime.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_bfloat16.h>
 
-#include <cuda_runtime.h>
-#include <cuda_fp16.h>
-#if CUDART_VERSION >= 11000
-#include <cuda_bf16.h>
-#endif
+#include "rccl/rccl.h"
 
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && defined(__CUDA_BF16_TYPES_EXIST__)
+
+#define RCCL_BFLOAT 1
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_BFLOAT16 ==1
   #define HAVE_ncclBfloat16 1
 #else
   #define HAVE_ncclBfloat16 0
@@ -83,10 +91,10 @@ namespace {
 template<typename T>
 struct IsIntegral: std::is_integral<T> {};
 template<>
-struct IsIntegral<half>: std::false_type {};
-#ifdef __CUDA_BF16_TYPES_EXIST__
+struct IsIntegral<__half>: std::false_type {};
+#if RCCL_BFLOAT16 == 1
 template<>
-struct IsIntegral<__nv_bfloat16>: std::false_type {};
+struct IsIntegral<hip_bfloat16>: std::false_type {};
 #endif
 }
 
@@ -116,13 +124,13 @@ namespace {
     return Y(x);
   }
   template<>
-  __host__ __device__ half castTo<half>(float x) {
+  __host__ __device__ half castTo<__half>(float x) {
     return __float2half(x);
   }
-  #ifdef __CUDA_BF16_TYPES_EXIST__
+  #if RCCL_BFLOAT16 == 1
   template<>
-  __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(float x) {
-    return __float2bfloat16(x);
+  __host__ __device__ hip_bfloat16 castTo<hip_bfloat16>(float x) {
+    return hip_bfloat16(x);
   }
   #endif
 }
@@ -144,20 +152,12 @@ struct ReduceSum {
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
   template<typename T, typename=decltype(T()+T())>
   __host__ __device__ T operator()(T a, T b) const { return a + b; }
-  __host__ __device__ half operator()(half a, half b) const {
-    #if __CUDA_ARCH__ >= 530
-      return __hadd(a, b);
-    #else
+  __host__ __device__ __half operator()(__half a, __half b) const {
       return __float2half(__half2float(a) + __half2float(b));
-    #endif
   }
-  #ifdef __CUDA_BF16_TYPES_EXIST__
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hadd(a, b);
-    #else
-      return __float2bfloat16(__bfloat162float(a) + __bfloat162float(b));
-    #endif
+  #if RCCL_BFLOAT16 == 1
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+      return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
   template<typename T>
@@ -168,20 +168,12 @@ struct ReduceProd {
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
   template<typename T, typename=decltype(T()*T())>
   __host__ __device__ T operator()(T a, T b) const { return a * b; }
-  __host__ __device__ half operator()(half a, half b) const {
-    #if __CUDA_ARCH__ >= 530
-      return __hmul(a, b);
-    #else
+  __host__ __device__ __half operator()(__half a, __half b) const {
       return __float2half(__half2float(a) * __half2float(b));
-    #endif
   }
-  #ifdef __CUDA_BF16_TYPES_EXIST__
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hmul(a, b);
-    #else
-      return __float2bfloat16(__bfloat162float(a) * __bfloat162float(b));
-    #endif
+  #if RCCL_BFLOAT16 == 1
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+      return hip_bfloat16(static_cast<float>(a) * static_cast<float>(b));
   }
   #endif
   template<typename T>
@@ -192,24 +184,12 @@ struct ReduceMin {
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
   template<typename T, typename=decltype(T()<T())>
   __host__ __device__ T operator()(T a, T b) const { return a < b ? a : b; }
-  __host__ __device__ half operator()(half a, half b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hmin(a, b);
-    #elif __CUDA_ARCH__ >= 530
-      return __hlt(a, b) ? a : b;
-    #else
-      return __half2float(a) < __half2float(b) ? a : b;
-    #endif
+  __host__ __device__ __half operator()(__half a, __half b) const {
+    return __half2float(a) < __half2float(b) ? a : b;
   }
-  #ifdef __CUDA_BF16_TYPES_EXIST__
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hmin(a, b);
-    //#elif __CUDA_ARCH__ >= 530
-    //  return __hlt(a, b) ? a : b;
-    #else
-      return __bfloat162float(a) < __bfloat162float(b) ? a : b;
-    #endif
+  #if RCCL_BFLOAT16 == 1
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+      return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   #endif
   template<typename T>
@@ -220,24 +200,12 @@ struct ReduceMax {
   __host__ __device__ T preOp(T x, int /*rank_me*/) const { return x; }
   template<typename T, typename=decltype(T()>T())>
   __host__ __device__ T operator()(T a, T b) const { return a > b ? a : b; }
-  __host__ __device__ half operator()(half a, half b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hmax(a, b);
-    #elif __CUDA_ARCH__ >= 530
-      return __hgt(a, b) ? a : b;
-    #else
+  __host__ __device__ __half operator()(__half a, __half b) const {
       return __half2float(a) > __half2float(b) ? a : b;
-    #endif
   }
-  #ifdef __CUDA_BF16_TYPES_EXIST__
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return __hmax(a, b);
-    //#elif __CUDA_ARCH__ >= 530
-    //  return __hgt(a, b) ? a : b;
-    #else
-      return __bfloat162float(a) > __bfloat162float(b) ? a : b;
-    #endif
+  #if RCCL_BFLOAT16 == 1
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+      return static_cast<float>(a) > static_cast<float>(b) ? a : b;
   }
   #endif
   template<typename T>
@@ -309,13 +277,13 @@ struct FloatLayout<double> {
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
 template<>
-struct FloatLayout<half> {
+struct FloatLayout<__half> {
   static constexpr int exponent_bits = 5, mantissa_bits = 10;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
-#ifdef __CUDA_BF16_TYPES_EXIST__
+#if RCCL_BFLOAT16 == 1
 template<>
-struct FloatLayout<__nv_bfloat16> {
+struct FloatLayout<hip_bfloat16> {
   static constexpr int exponent_bits = 8, mantissa_bits = 7;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
@@ -340,14 +308,14 @@ namespace {
 // from unbounded random values. For instance, given X a totally random 32-bit
 // integer, `umul32hi(X,n)` will be totally random within [0,n).
 __host__ __device__ uint64_t umul32hi(uint32_t a, uint32_t b) {
-#ifdef __CUDA_ARCH__
+#if HIP_VERSION > 50200000
   return __umulhi(a, b);
 #else
   return uint64_t(a)*b >> 32;
 #endif
 }
 __host__ __device__ uint64_t umul64hi(uint64_t a, uint64_t b) {
-#ifdef __CUDA_ARCH__
+#if HIP_VERSION > 50200000
   return __umul64hi(a, b);
 #else
   return uint64_t(__uint128_t(a)*__uint128_t(b) >> 64);
@@ -355,14 +323,14 @@ __host__ __device__ uint64_t umul64hi(uint64_t a, uint64_t b) {
 }
 
 __host__ __device__ int clz32(int x) {
-#ifdef __CUDA_ARCH__
+#if HIP_VERSION > 50200000
   return __clz(x);
 #else
   return x==0 ? 32 : __builtin_clz(x);
 #endif
 }
 __host__ __device__ int clz64(long long x) {
-#ifdef __CUDA_ARCH__
+#if HIP_VERSION > 50200000
   return __clzll(x);
 #else
   return x==0 ? 64 : __builtin_clzll(x);
@@ -747,8 +715,9 @@ __host__ __device__ void genOutput(
   ) {
   ans = genInOutFloatSum<T>(/*input_not_output=*/false, rank_n, 0, seed, index, /*same_sign=*/true);
   using T1 = typename std::conditional<(sizeof(T)<sizeof(double)), float, double>::type;
-  ans = ReduceProd()(ans, T1(1)/T1(rank_n));
-}
+  //ans = ReduceProd()(ans, T1(1)/T1(rank_n));
+  ans = ReduceProd()(ans, inhibit(castTo<T>(T1(1)/T1(rank_n))));
+ }
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -835,7 +804,7 @@ __global__ void prepareInput2(
 template<typename ReduceOp>
 void prepareInput1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n, int rank_me,
-    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
+    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
   ) {
   int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
   #define CASE_TY(T) prepareInput2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, rank_me, seed, elt_ix0); break;
@@ -846,9 +815,9 @@ void prepareInput1(
   case ncclUint32: CASE_TY(uint32_t)
   case ncclInt64: CASE_TY(int64_t)
   case ncclUint64: CASE_TY(uint64_t)
-  case ncclFloat16: CASE_TY(half)
+  case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -860,7 +829,7 @@ void prepareInput1(
 
 void ncclVerifiablePrepareInput(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n, int rank_me,
-    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
+    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -911,7 +880,7 @@ __global__ void prepareExpected2(
 template<typename ReduceOp>
 void prepareExpected1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n,
-    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
+    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
   ) {
   int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
   #define CASE_TY(T) prepareExpected2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, seed, elt_ix0); break;
@@ -922,9 +891,9 @@ void prepareExpected1(
   case ncclUint32: CASE_TY(uint32_t)
   case ncclInt64: CASE_TY(int64_t)
   case ncclUint64: CASE_TY(uint64_t)
-  case ncclFloat16: CASE_TY(half)
+  case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -936,7 +905,7 @@ void prepareExpected1(
 
 void ncclVerifiablePrepareExpected(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n,
-    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
+    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -1044,7 +1013,8 @@ __global__ void verifyPrepared(
     #endif
     i += blockDim.x;
   }
-  asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  //asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  atomicAdd((unsigned long *)bad_elt_n, (unsigned long)bad);
 }
 
 template<typename T, typename Uint, typename ReduceFn>
@@ -1077,13 +1047,14 @@ __global__ void verifyInline2(
     #endif
     i += blockDim.x;
   }
-  asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  //asm volatile("red.global.add.u64 [%0],%1;" :: "l"(bad_elt_n), "l"(bad));
+  atomicAdd((unsigned long*)bad_elt_n, (unsigned long)bad);
 }
 
 template<typename T, typename Uint>
 void verifyInline1(
     T const *results, intptr_t elt_n, int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
-    unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
+    unsigned tolerance, int64_t *bad_elt_n, hipStream_t stream, int block_n
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -1112,7 +1083,7 @@ void verifyInline1(
 void ncclVerifiableVerify(
     void const *results, void const *expected, intptr_t elt_n, int elt_ty,
     int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
-    int64_t *bad_elt_n, cudaStream_t stream
+    int64_t *bad_elt_n, hipStream_t stream
   ) {
   bool floating = elt_ty == ncclFloat16 || elt_ty == ncclFloat32 || elt_ty == ncclFloat64;
   #if HAVE_ncclBfloat16
@@ -1142,9 +1113,9 @@ void ncclVerifiableVerify(
   case ncclUint32: CASE_TY(uint32_t, uint32_t)
   case ncclInt64: CASE_TY(int64_t, uint64_t)
   case ncclUint64: CASE_TY(uint64_t, uint64_t)
-  case ncclFloat16: CASE_TY(half, uint16_t)
+  case ncclFloat16: CASE_TY(__half, uint16_t)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16, uint16_t)
+  case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
@@ -1180,7 +1151,7 @@ __device__ void sweep2(int ty, char const *tyname, Op op, char const *opname, in
     }
     sum = op.postOp(sum);
     if(tolerance < calcDelta(sum, y)) {
-      std::printf(
+      printf(
         //"%10g != %10g  :  T=%-8s op=%-9s rank_n=%-1d ix=%-1d\n",
         "%llx != %llx  :  T=%-8s op=%-9s rank_n=%-1d ix=%-1d\n",
         *(long long*)&sum, *(long long*)&y, tyname, opname, rank_n, ix
@@ -1209,9 +1180,9 @@ __global__ void sweep() {
   sweep1<uint32_t>(ncclUint32, "uint32");
   sweep1<int64_t>(ncclInt64, "int64");
   sweep1<uint64_t>(ncclUint64, "uint64");
-  sweep1<half>(ncclFloat16, "half");
+  sweep1<__half>(ncclFloat16, "half");
   #if HAVE_ncclBfloat16
-    sweep1<__nv_bfloat16>(ncclBfloat16, "bfloat16");
+    sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");
@@ -1219,9 +1190,9 @@ __global__ void sweep() {
 
 int main(int arg_n, char **args) {
   std::cerr<<"You are hoping to see no output beyond this line."<<std::endl;
-  cudaSetDevice(0);
+  hipSetDevice(0);
   sweep<<<1,512>>>();
-  cudaDeviceSynchronize();
+  hipDeviceSynchronize();
   return 0;
 }
 #endif

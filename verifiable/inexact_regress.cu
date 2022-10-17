@@ -1,3 +1,10 @@
+/*************************************************************************
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 /* Generate parameters for our error bound model of floating point average
  * (sum of scaled values) by sampling sums of random sequences for each
  * floating point type.
@@ -16,12 +23,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 
 using std::uint64_t;
 using std::uint32_t;
-using bfloat16 = __nv_bfloat16;
+using bfloat16 = hip_bfloat16;
 
 template<typename T>
 struct float_traits;
@@ -49,26 +56,26 @@ struct float_traits<double> {
   __device__ static double mul(double a, double b) { return a*b; }
 };
 template<>
-struct float_traits<half> {
+struct float_traits<__half> {
   static constexpr int mantissa_bits = 10;
   static constexpr int exponent_bits = 5;
   using uint_t = uint16_t;
-  __device__ static half make(double x) { return __double2half(x); }
-  __device__ static half make(uint64_t x) { return __int2half_rn(x); }
-  __device__ static double todouble(half x) { return __half2float(x); }
-  __device__ static half add(half a, half b) { return __hadd(a, b); }
-  __device__ static half mul(half a, half b) { return __hmul(a, b); }
+  __device__ static __half make(double x) { return __float2half((float)x); }
+  __device__ static __half make(uint64_t x) { return __int2half_rn(x); }
+  __device__ static double todouble(__half x) { return __half2float(x); }
+  __device__ static __half add(__half a, __half b) { return __hadd(a, b); }
+  __device__ static __half mul(__half a, __half b) { return __hmul(a, b); }
 };
 template<>
 struct float_traits<bfloat16> {
   static constexpr int mantissa_bits = 7;
   static constexpr int exponent_bits = 8;
   using uint_t = uint16_t;
-  __device__ static bfloat16 make(double x) { return __double2bfloat16(x); }
-  __device__ static bfloat16 make(uint64_t x) { return __int2bfloat16_rn(x); }
-  __device__ static double todouble(bfloat16 x) { return __bfloat162float(x); }
-  __device__ static bfloat16 add(bfloat16 a, bfloat16 b) { return __hadd(a, b); }
-  __device__ static bfloat16 mul(bfloat16 a, bfloat16 b) { return __hmul(a, b); }
+  __device__ static bfloat16 make(double x) { return bfloat16(x); }
+  __device__ static bfloat16 make(uint64_t x) { return bfloat16(x); }
+  __device__ static double todouble(bfloat16 x) { return double(x); }
+  __device__ static bfloat16 add(bfloat16 a, bfloat16 b) { return bfloat16(__hadd((float)a, (float)b)); }
+  __device__ static bfloat16 mul(bfloat16 a, bfloat16 b) { return bfloat16(__hmul((float)a, (float)b)); }
 };
 
 template<typename F>
@@ -104,6 +111,17 @@ struct xoshiro256ss {
   }
 };
 
+static __device__ int __reduce_max_sync(unsigned int mask, int value)
+{
+  //We ignore mask, since all bits are set when calling them in the
+  //test code below.
+  int width = warpSize;
+  for (unsigned int i = warpSize; i; i >>= 1) {
+    value = max(__shfl_down(value, i, width), value);
+  }
+  return value;
+}
+
 template<typename F>
 __global__ void kernel() {
   using traits = float_traits<F>;
@@ -123,7 +141,7 @@ __global__ void kernel() {
     for(int round=0; round < 1 + (16<<10)/max_ranks; round++) {
     //for(int round=0; round < 2; round++) {
       for(int i=threadIdx.x; i < samps; i += blockDim.x) {
-        accf[i] = 0;
+        accf[i] = (F)0;
         accd[i] = 0;
       }
       __syncthreads();
@@ -157,21 +175,21 @@ __global__ void kernel() {
     if(pass==0)
       expo_avg = expo_sum/expo_n;
     else if(threadIdx.x == 0)
-      std::printf("  coef=%1.10f expo=%1.10f\n", coef, expo_avg);
+      printf("  coef=%1.10f expo=%1.10f\n", coef, expo_avg);
   }
 }
 
 int main() {
   std::printf("type=float:\n");
   kernel<float><<<1,32>>>();
-  cudaDeviceSynchronize();
+  hipDeviceSynchronize();
 
   std::printf("\ntype=half:\n");
   kernel<half><<<1,32>>>();
-  cudaDeviceSynchronize();
+  hipDeviceSynchronize();
 
   std::printf("\ntype=bfloat16:\n");
   kernel<bfloat16><<<1,32>>>();
-  cudaDeviceSynchronize();
+  hipDeviceSynchronize();
   return 0;
 }

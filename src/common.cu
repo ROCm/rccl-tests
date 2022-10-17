@@ -165,18 +165,18 @@ static bool minReqVersion(int rmajor, int rminor, int rpatch)
 }
 
 testResult_t CheckDelta(void* results, void* expected, size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int64_t *wrongEltN) {
-  ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, cudaStreamDefault);
-  CUDACHECK(cudaDeviceSynchronize());
+  ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, hipStreamDefault);
+  HIPCHECK(hipDeviceSynchronize());
   return testSuccess;
 }
 
 testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks) {
-  ncclVerifiablePrepareExpected(data, count, (int)type, (int)op, nranks, seed, offset, cudaStreamDefault);
+  ncclVerifiablePrepareExpected(data, count, (int)type, (int)op, nranks, seed, offset, hipStreamDefault);
   return testSuccess;
 }
 
 testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int rank) {
-  ncclVerifiablePrepareInput(data, count, (int)type, (int)op, nranks, rank, seed, offset, cudaStreamDefault);
+  ncclVerifiablePrepareInput(data, count, (int)type, (int)op, nranks, rank, seed, offset, hipStreamDefault);
   return testSuccess;
 }
 
@@ -271,7 +271,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->expectedBytes/wordSize(type);
 
   int64_t *wrongPerGpu = nullptr;
-  CUDACHECK(hipHostAlloc((void**)&wrongPerGpu, args->nGpus*sizeof(int64_t), hipHostAllocMapped));
+  HIPCHECK(hipHostMalloc((void**)&wrongPerGpu, args->nGpus*sizeof(int64_t), hipHostMallocMapped));
   
   for (int i=0; i<args->nGpus*args->nRanks; i++) {
     int device;
@@ -352,7 +352,7 @@ testResult_t testStreamSynchronize(int nStreams, hipStream_t* streams, ncclComm_
      }
      double delta = tim.elapsed();
      if (delta > timeout && timeout > 0) {
-       for (int i=0; i<ngpus; i++)
+       for (int i=0; i<nStreams; i++)
          NCCLCHECK(ncclCommAbort(comms[i]));
        char hostname[1024];
        getHostName(hostname, 1024);
@@ -387,7 +387,6 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     int hipDev;
     NCCLCHECK(ncclCommCuDevice(args->comms[i], &hipDev));
     HIPCHECK(hipSetDevice(hipDev));
-    //CUDACHECK(cudaSetDevice(args->gpus[i])); EDGAR CHECK LATER
 #endif
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i);
     char* recvBuff = ((char*)args->recvbuffs[i]) + shift;
@@ -417,7 +416,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFloat32: f32 = ncclVerifiablePremulScalar<float>(rank); break;
       case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
       #if defined(RCCL_BFLOAT16)
-      case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<__nv_bfloat16>(rank); break;
+      case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
       #endif
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
@@ -452,7 +451,7 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
-//EDGAR: Revisit because of cudaGraphLaunches
+//RCCL: Revisit because of cudaGraphLaunches
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
@@ -648,7 +647,9 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
-        print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
+	char rootName[100];
+	sprintf(rootName, "%6i", root);	
+	PRINT("%12li  %12li  %8s  %6s  %6s", (size_t)max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
         TESTCHECK(BenchTime(args, type, op, root, 0));
         TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
@@ -661,10 +662,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-  if (enable_multiranks)
-    gpuid = gpuid % numDevices;
-  HIPCHECK(hipSetDevice(gpuid));
+  HIPCHECK(hipSetDevice(args->gpus[0]));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
 }
@@ -679,11 +677,7 @@ testResult_t threadInit(struct threadArgs* args) {
 
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (enable_multiranks)
-      gpuid = gpuid % numDevices;
-    HIPCHECK(hipSetDevice(gpuid));
-    //CUDACHECK(cudaSetDevice(args->gpus[i]));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int j=0; j<args->nRanks; j++) {
       int rank = (args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + j;
@@ -715,7 +709,7 @@ testResult_t threadLaunch(struct testThread* thread) {
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
+testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
   if (memorytype == ncclFine) {
     HIPCHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
     HIPCHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
@@ -807,12 +801,10 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-    // EDGAR NOTE: y is used by 'memory_type' (a RCCL argument) and 'stream_null' (a NCCL argument)
-    // also not sure about G vs. hG (we had G, they have hG)
 #ifdef RCCL_MULTIRANKPERGPU    
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z :y :T:G:C:a :y :s:u:h:R:x:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:R:x:", longopts, &longindex);
 #else
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z :y :T:G:C:a :y :s:u:h:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:", longopts, &longindex);
 #endif
 
     if (c == -1)
@@ -878,7 +870,7 @@ int main(int argc, char* argv[]) {
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
         break;
-      case 'y':
+      case 'Y':
         memorytype = ncclstringtomtype(optarg);
         break;
       case 's':
@@ -946,7 +938,7 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
-            "[-y,--memory_type <coarse/fine/host/managed>] \n\t"
+            "[-Y,--memory_type <coarse/fine/host/managed>] \n\t"
             "[-s,--stress_cycles <number of cycles>] \n\t"
             "[-u,--cumask <d0,d1,d2,d3>] \n\t"
             "[-y,--stream_null <0/1>] \n\t"
@@ -1084,15 +1076,15 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, mpi_comm);
 #endif
-<<<<<<< HEAD
-  int gpus[nGpus*nThreads*ranksPerGpu];
+
+  int gpus[nGpus*nThreads];
   hipStream_t streams[nGpus*nThreads*ranksPerGpu];
   void* sendbuffs[nGpus*nThreads*ranksPerGpu];
   void* recvbuffs[nGpus*nThreads*ranksPerGpu];
   void* expected[nGpus*nThreads*ranksPerGpu];
   size_t sendBytes, recvBytes;
 
-  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads*ranksPerGpu);
+  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads*ranksPerGpu);
 
   envstr = getenv("NCCL_TESTS_DEVICE");
   gpu0 = envstr ? atoi(envstr) : -1;
@@ -1101,53 +1093,44 @@ testResult_t run() {
     if (enable_multiranks)
       gpuid = gpuid % numDevices;
 
+    gpus[ii] = gpu0 != -1 ? gpu0+ii : gpuid;
+    HIPCHECK(hipSetDevice(gpus[ii]));
+
     for (int j=0; j<ranksPerGpu; j++) {
       int i = ii*ranksPerGpu+j;
-      gpus[i] = gpu0 != -1 ? gpu0+ii : gpuid;
-      HIPCHECK(hipSetDevice(gpus[i]));
-
-      TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus*ranksPerGpu));
-      //PRINT("sendbuffs[%d]=%p(size=%lu) recvbuffs[%d]=%p(size=%lu)\n", i, sendbuffs[i], sendBytes, i, recvbuffs[i], recvBytes);
-    if (streamnull)
-      streams[i] = NULL;
-    else {
-      if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
-	PRINT("cumask: ");
-	for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
-	PRINT("\n");
-	HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
-      } else
-	HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+      TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes));
+      if (streamnull)
+	streams[i] = NULL;
+      else {
+	if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
+	  PRINT("cumask: ");
+	  for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
+	  PRINT("\n");
+	  HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
+	} else
+	  HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+      }
     }
-#if 0 //EDGAR
-    // initialize data buffer to avoid all zero data
-      TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
-    }
-    HIPCHECK(hipDeviceSynchronize());
-#endif //EDGAR
   }
 
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus*ranksPerGpu);
   if (!parallel_init) {
-     if (nProcs == 1 && !enable_multiranks) {
+     if (ncclProcs == 1 && !enable_multiranks) {
        NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
      } else {
        NCCLCHECK(ncclGroupStart());
        for (int ii=0; ii<nGpus*nThreads; ii++) {
-	 int gpuid = localRank*nThreads*nGpus+ii;
-         if (enable_multiranks) {
-	   gpuid = gpuid % numDevices;
-	 }
-         HIPCHECK(hipSetDevice(gpuid));
+         HIPCHECK(hipSetDevice(gpus[ii]));
 	 if (!enable_multiranks) {
-	   NCCLCHECK(ncclCommInitRank(comms+ii, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+ii));
+	   NCCLCHECK(ncclCommInitRank(comms+ii, ncclProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+ii));
 	 }
 #ifdef RCCL_MULTIRANKPERGPU
 	 else
 	   for (int j=0; j<ranksPerGpu; j++) {
 	     int i = ii*ranksPerGpu+j;
-	     NCCLCHECK(ncclCommInitRankMulti(comms+i, nProcs*nThreads*nGpus*ranksPerGpu, ncclId, proc*nThreads*nGpus*ranksPerGpu+i, proc*nThreads*nGpus*ranksPerGpu+i));
+	     NCCLCHECK(ncclCommInitRankMulti(comms+i, ncclProcs*nThreads*nGpus*ranksPerGpu, ncclId,
+					     proc*nThreads*nGpus*ranksPerGpu+i, proc*nThreads*nGpus*ranksPerGpu+i));
 	   }
 #endif
        }
@@ -1182,6 +1165,8 @@ testResult_t run() {
     threads[t].args.stepbytes=stepBytes;
     threads[t].args.stepfactor=stepFactor;
     threads[t].args.localRank = localRank;
+
+    threads[t].args.totalProcs = totalProcs;
     threads[t].args.localNumDevices = numDevices;
     threads[t].args.enable_multiranks = enable_multiranks;
     threads[t].args.nRanks = ranksPerGpu;
@@ -1190,7 +1175,7 @@ testResult_t run() {
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
-    threads[t].args.gpus=gpus+t*nGpus*ranksPerGpu;
+    threads[t].args.gpus=gpus+t*nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus*ranksPerGpu;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus*ranksPerGpu;
     threads[t].args.expected = expected+t*nGpus*ranksPerGpu;
