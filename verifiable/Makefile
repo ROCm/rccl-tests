@@ -5,6 +5,13 @@
 # See LICENSE.txt for license information
 #
 
+#include ../../makefiles/common.mk
+
+.PHONY: all clean
+
+BUILDDIR := $(abspath ../../build)
+DST_DIR := $(BUILDDIR)/test/verifiable
+
 ROCM_PATH ?= /opt/rocm
 MPI_HOME ?= /usr/lib/openmpi
 PREFIX ?= /usr/local
@@ -12,7 +19,7 @@ VERBOSE ?= 0
 DEBUG ?= 0
 NCCL_HOME ?= ""
 
-HIPCC = $(ROCM_PATH)/hip/bin/hipcc
+HIPCC = $(ROCM_PATH)/bin/hipcc
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
@@ -38,10 +45,6 @@ ifeq ($(VERBOSE), 0)
 .SILENT:
 endif
 
-.PHONY: build clean
-
-BUILDDIR ?= ../build
-
 ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
 HIPLDFLAGS += -L${MPI_HOME}/lib -lmpi
@@ -53,35 +56,18 @@ endif
 LIBRARIES += rccl
 HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 
-DST_DIR := $(BUILDDIR)
-SRC_FILES := $(wildcard *.cu)
-OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv
-BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
-
-build: ${BIN_FILES}
+all: $(DST_DIR)/verifiable.o $(DST_DIR)/self_test 
 
 clean:
-	rm -rf ${DST_DIR}
+	rm -rf $(DST_DIR)
 
-TEST_VERIFIABLE_SRCDIR := ../verifiable
-TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
-include ../verifiable/verifiable.mk
+TEST_VERIFIABLE_SRCDIR := .
+TEST_VERIFIABLE_BUILDDIR := $(DST_DIR)
+include verifiable.mk
 
-${DST_DIR}/%.o: %.cu common.h $(TEST_VERIFIABLE_HDRS)
-	@printf "Compiling  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
-	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
+self_test: $(DST_DIR)/self_test
 
-${DST_DIR}/timer.o: timer.cc timer.h
-	@printf "Compiling  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(CXX) $(CXXFLAGS) -o $@ -c timer.cc
-
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"
-	$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}
-
+$(DST_DIR)/self_test: verifiable.cu verifiable.h
+	@printf "Linking  %s\n" $@
+	@mkdir -p $(DST_DIR)
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -DSELF_TEST=1 verifiable.cu $(HIPLDFLAGS)

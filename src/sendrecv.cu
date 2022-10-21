@@ -1,24 +1,12 @@
 /*************************************************************************
- * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
- * Modifications Copyright (c) 2020-2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
 #include <hip/hip_runtime.h>
 #include "common.h"
-
-void print_header() {
-  PRINT("# %10s  %12s  %8s            out-of-place                       in-place          \n", "", "", "");
-  PRINT("# %10s  %12s  %8s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type",
-        "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
-  PRINT("# %10s  %12s  %8s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %8s", size, count, typeName);
-}
 
 void SendRecvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   *sendcount = count;
@@ -35,18 +23,15 @@ testResult_t SendRecvInitData(struct threadArgs* args, ncclDataType_t type, nccl
 
   int k=0;
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (args->enable_multiranks)
-      gpuid = gpuid % args->localNumDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int l=0; l<args->nRanks; l++) {
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
       HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
       void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, rep, 1, 0));
       int peer = (rank-1+nranks)%nranks;
-      TESTCHECK(InitData(args->expected[k], recvcount, type, rep, peer));
+      TESTCHECK(InitData(args->expected[k], recvcount, peer*recvcount, type, ncclSum, rep, 1, 0));
       k++;
     }
     HIPCHECK(hipDeviceSynchronize());

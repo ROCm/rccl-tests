@@ -1,24 +1,12 @@
 /*************************************************************************
- * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
- * Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
 #include <hip/hip_runtime.h>
 #include "common.h"
-
-void print_header() {
-  PRINT("# %10s  %12s  %8s  %6s            out-of-place                       in-place          \n", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type", "root",
-        "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
-  PRINT("# %10s  %12s  %8s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %8s  %6i", size, count, typeName, root);
-}
 
 void BroadcastGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   *sendcount = count;
@@ -34,17 +22,14 @@ testResult_t BroadcastInitData(struct threadArgs* args, ncclDataType_t type, ncc
 
   int k=0;
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (args->enable_multiranks)
-      gpuid = gpuid % args->localNumDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int l=0; l<args->nRanks; l++) {
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
       HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
       void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
-      if (rank == root) TESTCHECK(InitData(data, sendcount, type, rep, rank));
-      TESTCHECK(InitData(args->expected[k], recvcount, type, rep, root));
+      if (rank == root) TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, rep, 1, 0));
+      TESTCHECK(InitData(args->expected[k], recvcount, 0, type, ncclSum, rep, 1, 0));
       k++;
     }
     HIPCHECK(hipDeviceSynchronize());
@@ -114,7 +99,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
 
   for (int i=0; i<type_count; i++) {
     for (int j=begin_root; j<=end_root; j++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", j));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", j));
     }
   }
   return testSuccess;

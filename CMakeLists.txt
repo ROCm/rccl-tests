@@ -51,6 +51,7 @@ endif()
 set(ROCM_USE_DEV_COMPONENT OFF)  # This repo doesn't have a dev component
 
 # Add all of the tests
+add_subdirectory(verifiable)
 add_subdirectory(src)
 
 # Create ROCm standard packages
