@@ -805,11 +805,12 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
+
 #ifdef RCCL_MULTIRANKPERGPU    
     c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:R:x:q:", longopts, &longindex);
 #else
     c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:q:", longopts, &longindex);
-#endif
+
 
     if (c == -1)
       break;
@@ -1106,17 +1107,18 @@ testResult_t run() {
 
     for (int j=0; j<ranksPerGpu; j++) {
       int i = ii*ranksPerGpu+j;
+
       TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes));
       if (streamnull)
-	streams[i] = NULL;
+      	streams[i] = NULL;
       else {
-	if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
-	  PRINT("cumask: ");
-	  for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
-	  PRINT("\n");
-	  HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
-	} else
-	  HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+	      if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
+	         PRINT("cumask: ");
+	         for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
+	         PRINT("\n");
+	         HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
+	      } else
+	         HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
       }
     }
   }
