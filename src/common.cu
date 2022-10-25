@@ -810,7 +810,7 @@ int main(int argc, char* argv[]) {
     c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:R:x:q:", longopts, &longindex);
 #else
     c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:q:", longopts, &longindex);
-
+#endif
 
     if (c == -1)
       break;
