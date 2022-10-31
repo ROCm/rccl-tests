@@ -21,7 +21,7 @@ HIPLDFLAGS :=
 
 ifneq ($(NCCL_HOME), "")
 HIPCUFLAGS += -I$(NCCL_HOME)/ -I$(NCCL_HOME)/include
-HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
+HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME) -L$(NCCL_HOME)/lib
 endif
 HIPCUFLAGS += -I$(ROCM_PATH)/include
 HIPCUFLAGS += -I$(ROCM_PATH)/include/hip
