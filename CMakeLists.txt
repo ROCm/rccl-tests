@@ -1,6 +1,8 @@
 # ########################################################################
 # Copyright 2022 Advanced Micro Devices, Inc.
 # ########################################################################
+#Adding pthread flag for linking
+set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 macro(check_mpi mpi_compiler mpi_lib_a mpi_lib_so)
     find_program(MPI_MPICXX ${mpi_compiler})
     if (MPI_MPICXX)
