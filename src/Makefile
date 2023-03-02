@@ -27,7 +27,7 @@ HIPCUFLAGS += -I$(ROCM_PATH)/include
 HIPCUFLAGS += -I$(ROCM_PATH)/include/rccl
 HIPCUFLAGS += -I$(ROCM_PATH)/hip/include/hip
 LDFLAGS    += -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
-HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
+HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt -pthread
 
 ifeq ($(DEBUG), 0)
 HIPCUFLAGS += -O3

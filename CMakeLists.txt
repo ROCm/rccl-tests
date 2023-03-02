@@ -1,6 +1,8 @@
 # ########################################################################
 # Copyright 2022 Advanced Micro Devices, Inc.
 # ########################################################################
+#Adding pthread flag for linking
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
 cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 
