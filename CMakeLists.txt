@@ -3,29 +3,23 @@
 # ########################################################################
 #Adding pthread flag for linking
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-macro(check_mpi mpi_compiler mpi_lib_a mpi_lib_so)
-    find_program(MPI_MPICXX ${mpi_compiler})
+macro(check_mpi mpi_compiler mpi_lib_a mpi_lib_so mpi_bin_dir mpi_base_lib_dir mpi_inc_dir)
+    find_program(MPI_MPICXX ${mpi_compiler} PATHS ${mpi_bin_dir} NO_DEFAULT_PATH)
     if (MPI_MPICXX)
         message ("-- ${mpi_compiler} found @ ${MPI_MPICXX}")
-        if (${CMAKE_VERSION} VERSION_LESS "3.20.0")
-            get_filename_component(mpi.tmpdir ${MPI_MPICXX} DIRECTORY)
-            get_filename_component(mpi_base_dir ${mpi.tmpdir} DIRECTORY)
-        else()
-            cmake_path(GET MPI_MPICXX PARENT_PATH mpi.tmpdir)
-            cmake_path(GET mpi.tmpdir PARENT_PATH mpi_base_dir)
-        endif()
-        find_file(MPI_H mpi.h PATHS ${mpi_base_dir} PATH_SUFFIXES include include/x86_64-linux-gnu ${ARGN} {REQUIRED)
-        if (${CMAKE_VERSION} VERSION_LESS "3.20.0")
-            get_filename_component(mpi_inc_dir ${MPI_H} DIRECTORY)
-        else()
-            cmake_path(GET MPI_H PARENT_PATH mpi_inc_dir)
-        endif()
-        message ("-- mpi.h is in ${mpi_inc_dir}")
-        find_file(MPI_LIB NAMES ${mpi_lib_so} ${mpi_lib_a} PATHS ${mpi_base_dir} PATH_SUFFIXES lib lib64 lib/x86_64-linux-gnu REQIRED)
+        find_file(MPI_H mpi.h PATHS ${mpi_inc_dir} NO_DEFAULT_PATH)
+        message ("-- mpi.h is in ${MPI_H}")
+        find_file(MPI_LIB NAMES ${mpi_lib_so} ${mpi_lib_a} PATHS ${mpi_base_lib_dir} PATH_SUFFIXES lib lib64 lib/x86_64-linux-gnu NO_DEFAULT_PATH)
         message ("-- libmpi is ${MPI_LIB}")
-        add_definitions(-DMPI_SUPPORT)
-        include_directories(${mpi_inc_dir})
-        link_libraries(${MPI_LIB})
+	if (NOT MPI_H OR NOT MPI_LIB)
+	    set (MPI_MPICXX "MPI_MPICXX-NOTFOUND")
+	    set (MPI_H "MPI_H-NOTFOUND")
+	    set (MPI_LIB "MPI_LIB-NOTFOUND")
+	else()
+            add_definitions(-DMPI_SUPPORT)
+            include_directories(${mpi_inc_dir})
+            link_libraries(${MPI_LIB})
+	endif()
     else()
         message ("-- ${mpi_compiler} not found")
     endif()
@@ -60,6 +54,7 @@ include(ROCMClients)
 
 # Build variables
 option(NO_MPI "Build RCCL-tests without MPI support.")
+option(MPI_PATH "Use MPI in the specified directory.")
 ## Get default GPU targets using rocm_check_target_ids
 rocm_check_target_ids(
     DEFAULT_AMDGPU_TARGETS
@@ -68,13 +63,35 @@ rocm_check_target_ids(
 set(AMDGPU_TARGETS "${DEFAULT_AMDGPU_TARGETS}" CACHE STRING "List of specific machine types for these tests to target.")
 
 if (NOT NO_MPI)
-    # Check for MPICH first
-    check_mpi(mpicxx.mpich libmpich.a libmpich.so include/x86_64-linux-gnu/mpich)
+    # CHECK for MPI Path first. User requested this directory explicitely
+    if (MPI_PATH)
+        set(mpi_spec_bin_dir "${MPI_PATH}/bin")
+	set(mpi_spec_inc_dir "${MPI_PATH}/include")
+        check_mpi(mpicxx libmpi.a libmpi.so ${mpi_spec_bin_dir} ${MPI_PATH} ${mpi_spec_inc_dir})
+	if (NOT MPI_MPICXX)
+            # Since the user explicitely requested this directory, abort if something went wrong.
+	    MESSAGE(FATAL_ERROR "Could not find MPI in ${MPI_PATH}")
+        endif()
+    endif()
 
-    # Check for MPI in general. If we find mpicxx, we don't know whether its
-    # MPICH or another MPI implementation
+    # Check for MPICH Ubuntu installation
     if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpi.a libmpi.so)
+        check_mpi(mpicxx.mpich libmpich.a libmpich.so /usr/bin /usr /usr/include/x86_64-linux-gnu/mpich)
+    endif()
+
+    # Check for Open MPI Ubuntu installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx.openmpi libmpi.a libmpi.so /usr/bin  /usr/lib/x86_64-linux-gnu/openmpi /usr/lib/x86_64-linux-gnu/openmpi/include)
+    endif()
+
+    # Check for MPICH RHEL installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpich.a libmpich.so /usr/lib64/mpich/bin /usr/lib64/mpich /usr/include/mpich-x86_64)
+    endif()
+
+    # Check for Open MPI RHEL installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/openmpi/bin /usr/lib64/openmpi /usr/include/openmpi-x64_64)
     endif()
 
     if (NOT MPI_MPICXX)
@@ -91,7 +108,7 @@ add_subdirectory(src)
 
 # Create ROCm standard packages
 rocm_create_package(
-    NAME rccl-separate-tests
+    NAME rccl-tests
     DESCRIPTION "Tests for the ROCm Communication Collectives Library"
     MAINTAINER "RCCL Maintainer <rccl-maintainer@amd.com>"
 )
