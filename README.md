@@ -30,8 +30,9 @@ $ make
 When using the cmake build procedure, please make sure that RCCL has also been built using cmake (i.e. not using the install.sh script), since cmake will check
 for cmake target and config files that are created during the RCCL build.
 
-Using the cmake method also has the advantage that the build is automatically checking for MPI installations, i.e. it is not necessary to explicitley request
-MPI builds. A user can explicitely disable MPI builds by adding the -DNO_MPI=1 flag to the cmake command line.
+Using the cmake method also has the advantage that the build is automatically checking for MPI installations, i.e. it is not necessary to explicitly request
+MPI builds. A user can request to use a particular MPI library by using the MPI_PATH variable. MPI support can be explicitely disabled by adding the -DNO_MPI=1
+flag to the cmake command line.
 
 
 ## Usage
