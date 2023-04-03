@@ -1127,11 +1127,13 @@ int main(int argc, char* argv[]) {
   }
 
   HIPCHECK(hipGetDeviceCount(&numDevices));
+#ifndef MPI_SUPPORT  
   if (nGpus > numDevices)
   {
       fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d)\n", nGpus, numDevices);
       return testNcclError;
   }
+#endif
   if (minBytes > maxBytes) {
     fprintf(stderr, "invalid sizes for 'minbytes' and 'maxbytes': %llu > %llu\n",
            (unsigned long long)minBytes,
@@ -1154,7 +1156,14 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 #ifdef MPI_SUPPORT
+  int nProcs = 1;
   MPI_Init(&argc, &argv);
+  MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
+  if (nGpus * nProcs > numDevices)
+  {
+      fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d)\n", nGpus*nProcs, numDevices);
+      return testNcclError;
+  }
 #endif
   TESTCHECK(run());
   return 0;
