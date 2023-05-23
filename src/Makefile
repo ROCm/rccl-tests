@@ -1,6 +1,6 @@
 #
-# Copyright (c) 2015-2021, NVIDIA CORPORATION. All rights reserved.
-# Modifications are Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+# Modifications are Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
 #
@@ -20,14 +20,13 @@ LDFLAGS    :=
 HIPLDFLAGS :=
 
 ifneq ($(NCCL_HOME), "")
-HIPCUFLAGS += -I$(NCCL_HOME) -I$(NCCL_HOME)/rccl/include
-HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
+HIPCUFLAGS += -I$(NCCL_HOME)/ -I$(NCCL_HOME)/include
+HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME) -L$(NCCL_HOME)/lib
 endif
 HIPCUFLAGS += -I$(ROCM_PATH)/include
-HIPCUFLAGS += -I$(ROCM_PATH)/include/rccl
-HIPCUFLAGS += -I$(ROCM_PATH)/hip/include/hip
+HIPCUFLAGS += -I$(ROCM_PATH)/include/hip
 LDFLAGS    += -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
-HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
+HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt -pthread
 
 ifeq ($(DEBUG), 0)
 HIPCUFLAGS += -O3
@@ -65,13 +64,22 @@ build: ${BIN_FILES}
 clean:
 	rm -rf ${DST_DIR}
 
-${DST_DIR}/%.o: %.cu common.h
+TEST_VERIFIABLE_SRCDIR := ../verifiable
+TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
+include ../verifiable/verifiable.mk
+
+${DST_DIR}/%.o: %.cu common.h $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
 	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o
+${DST_DIR}/timer.o: timer.cc timer.h
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(CXX) $(CXXFLAGS) -o $@ -c timer.cc
+
+${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"

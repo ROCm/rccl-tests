@@ -3,8 +3,8 @@
 # ########################################################################
 
 # Compile common object library
-set_property(SOURCE common.cu PROPERTY LANGUAGE CXX)
-add_library(rccl_common OBJECT common.cu)
+set_property(SOURCE common.cu timer.cc ../verifiable/verifiable.cu PROPERTY LANGUAGE CXX)
+add_library(rccl_common OBJECT common.cu timer.cc ../verifiable/verifiable.cu)
 if(USE_MPI)
     target_link_libraries(rccl_common roc::rccl MPI::MPI_CXX)
 else()
