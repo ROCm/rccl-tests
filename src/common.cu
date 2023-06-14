@@ -966,11 +966,13 @@ int main(int argc, char* argv[]) {
   }
 
   HIPCHECK(hipGetDeviceCount(&numDevices));
+#ifndef MPI_SUPPORT
   if (nGpus > numDevices)
   {
       fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d)\n", nGpus, numDevices);
       return testNcclError;
   }
+#endif
   if (minBytes > maxBytes) {
     fprintf(stderr, "invalid sizes for 'minbytes' and 'maxbytes': %llu > %llu\n",
            (unsigned long long)minBytes,
@@ -1002,6 +1004,7 @@ int main(int argc, char* argv[]) {
 testResult_t run() {
   int totalProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
   int localRank = 0;
+  int localSize = 0;
   char hostname[1024];
   getHostName(hostname, 1024);
 
@@ -1023,6 +1026,15 @@ testResult_t run() {
   MPI_Comm_split(MPI_COMM_WORLD, color, proc, &mpi_comm);
   MPI_Comm_size(mpi_comm, &ncclProcs);
   MPI_Comm_rank(mpi_comm, &ncclProc);
+
+  for (int p=0; p<nProcs; p++) {
+    if (hostHashs[p] == hostHashs[proc]) localSize++;
+  }
+  if (nGpus * localSize > numDevices)
+  {
+      fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d) on node (%s)\n", nGpus*localSize, numDevices, hostname);
+      return testNcclError;
+  }
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
