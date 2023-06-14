@@ -310,7 +310,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   *wrongElts = 0;
   for (int i=0; i < args->nGpus; i++) *wrongElts += wrongPerGpu[i];
-  hipFree(wrongPerGpu);
+  hipHostFree(wrongPerGpu);
 
   if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
@@ -1168,6 +1168,8 @@ testResult_t run() {
     bw[t] = 0.0;
     errors[t] = bw_count[t] = 0;
   }
+
+  fflush(stdout);
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
