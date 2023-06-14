@@ -46,9 +46,9 @@ Run on 8 GPUs (`-g 8`), scanning from 8 Bytes to 128MBytes :
 $ ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 8
 ```
 
-Run with MPI on 40 processes (potentially on multiple nodes) with 4 GPUs each :
+Run with MPI on 10 processes (potentially on multiple nodes) with 4 GPUs each, for a total of 40 GPUs:
 ```shell
-$ mpirun -np 40 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 4
+$ mpirun -np 10 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 4
 ```
 
 ### Performance
@@ -66,7 +66,7 @@ All tests support the same set of arguments :
   * `-b,--minbytes <min size in bytes>` minimum size to start with. Default : 32M.
   * `-e,--maxbytes <max size in bytes>` maximum size to end at. Default : 32M.
   * Increments can be either fixed or a multiplication factor. Only one of those should be used
-    * `-i,--stepbytes <increment size>` fixed increment between sizes. Default : (max-min)/10.
+    * `-i,--stepbytes <increment size>` fixed increment between sizes. Default : 1M.
     * `-f,--stepfactor <increment factor>` multiplication factor between sizes. Default : disabled.
 * RCCL operations arguments
   * `-o,--op <sum/prod/min/max/avg/all>` Specify which reduction operation to perform. Only relevant for reduction operations like Allreduce, Reduce or ReduceScatter. Default : Sum.
