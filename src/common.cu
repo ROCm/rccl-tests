@@ -1027,7 +1027,7 @@ testResult_t run() {
   MPI_Comm_size(mpi_comm, &ncclProcs);
   MPI_Comm_rank(mpi_comm, &ncclProc);
 
-  for (int p=0; p<nProcs; p++) {
+  for (int p=0; p<totalProcs; p++) {
     if (hostHashs[p] == hostHashs[proc]) localSize++;
   }
   if (nGpus * localSize > numDevices)
