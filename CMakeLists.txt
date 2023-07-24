@@ -94,6 +94,26 @@ if (NOT NO_MPI)
         check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/openmpi/bin /usr/lib64/openmpi /usr/include/openmpi-x64_64)
     endif()
 
+    # Check for MPICH SLES installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpich.a libmpich.so /usr/lib64/mpi/gcc/mpich/bin /usr/lib64/mpi/gcc/mpich /usr/lib64/mpi/gcc/mpich/include)
+    endif()
+
+    # Check for Open MPI v4 SLES installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi4/bin /usr/lib64/mpi/gcc/openmpi4 /usr/lib64/mpi/gcc/openmpi4/include)
+    endif()
+
+    # Check for Open MPI v3 SLES installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi3/bin /usr/lib64/mpi/gcc/openmpi3 /usr/lib64/mpi/gcc/openmpi3/include)
+    endif()
+    
+    # Check for Open MPI v2 SLES installation
+    if (NOT MPI_MPICXX)
+        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi2/bin /usr/lib64/mpi/gcc/openmpi2 /usr/lib64/mpi/gcc/openmpi2/include)
+    endif()
+
     if (NOT MPI_MPICXX)
         message ("-- no MPI library found")
     endif()
