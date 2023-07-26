@@ -18,6 +18,23 @@ RCCL tests rely on MPI to work on multiple processes, hence multiple nodes. If y
 $ make MPI=1 MPI_HOME=/path/to/mpi HIP_HOME=/path/to/hip RCCL_HOME=/path/to/rccl
 ```
 
+RCCL tests can also be built using cmake. A typical sequence will be:
+
+```shell
+$ mkdir build
+$ cd build
+$ CXX=/opt/rocm/bin/hipcc cmake -DCMAKE_PREFIX_PATH=/path/to/rccl ..
+$ make
+```
+
+When using the cmake build procedure, please make sure that RCCL has also been built using cmake (i.e. not using the install.sh script), since cmake will check
+for cmake target and config files that are created during the RCCL build.
+
+Using the cmake method also has the advantage that the build is automatically checking for MPI installations, i.e. it is not necessary to explicitly request
+MPI builds. A user can request to use a particular MPI library by using the MPI_PATH variable. MPI support can be explicitely disabled by adding the -DNO_MPI=1
+flag to the cmake command line.
+
+
 ## Usage
 
 RCCL tests can run on multiple processes, multiple threads, and multiple HIP devices per thread. The number of process is managed by MPI and is therefore not passed to the tests as argument. The total number of ranks (=HIP devices) will be equal to (number of processes)\*(number of threads)\*(number of GPUs per thread).
