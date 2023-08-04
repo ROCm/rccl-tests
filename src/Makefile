@@ -12,7 +12,7 @@ VERBOSE ?= 0
 DEBUG ?= 0
 NCCL_HOME ?= ""
 
-HIPCC = $(ROCM_PATH)/hip/bin/hipcc
+HIPCC = $(ROCM_PATH)/bin/hipcc
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
