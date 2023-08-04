@@ -12,7 +12,7 @@ VERBOSE ?= 0
 DEBUG ?= 0
 NCCL_HOME ?= ""
 
-HIPCC = $(ROCM_PATH)/hip/bin/hipcc
+HIPCC = $(ROCM_PATH)/bin/hipcc
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
@@ -25,7 +25,7 @@ HIPLDFLAGS   += -Wl,-rpath,$(NCCL_HOME) -L$(NCCL_HOME)
 endif
 HIPCUFLAGS += -I$(ROCM_PATH)/include
 HIPCUFLAGS += -I$(ROCM_PATH)/include/rccl
-HIPCUFLAGS += -I$(ROCM_PATH)/hip/include/hip
+HIPCUFLAGS += -I$(ROCM_PATH)/include/hip
 LDFLAGS    += -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt
 HIPLDFLAGS += $(CUSTOM_RCCL_LIB) -L$(ROCM_PATH)/lib -lhsa-runtime64 -lrt -pthread
 
