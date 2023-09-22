@@ -14,7 +14,7 @@ def runCompileCommand(platform, project, jobName)
                 ${auxiliary.exitIfNotSuccess()}
                 cd ${project.paths.project_build_prefix}
                 cmake \
-                    -DCMAKE_CXX_COMPILER=/opt/rocm/hip/bin/hipcc \
+                    -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
                     -S . -B build
                 make -C build -j\$(nproc)
                 ${auxiliary.exitIfNotSuccess()}
@@ -30,9 +30,9 @@ def runTestCommand (platform, project)
     def command = """#!/usr/bin/env bash
                 set -x
                 cd ${project.paths.project_build_prefix}
-		python3 -m pip install --upgrade pytest
-		python3 -m pytest --version
-		python3 -m pytest -k "not MPI and not host and not fine" --verbose --junitxml=./testreport.xml
+                python3 -m pip install --upgrade pytest
+                python3 -m pytest --version
+                python3 -m pytest -k "not MPI and not host and not fine" --verbose --junitxml=./testreport.xml
             """
 
    platform.runCommand(this, command)
