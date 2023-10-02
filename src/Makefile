@@ -12,7 +12,7 @@ VERBOSE ?= 0
 DEBUG ?= 0
 NCCL_HOME ?= ""
 
-HIPCC = $(ROCM_PATH)/hip/bin/hipcc
+HIPCC = $(ROCM_PATH)/bin/hipcc
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
@@ -84,4 +84,3 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_V
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"
 	$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}
-
