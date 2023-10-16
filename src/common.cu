@@ -641,7 +641,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Warm-up for small size
   setupArgs(args->minbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
-    TESTCHECK(startColl(args, type, op, root, 0, iter));
+    TESTCHECK(startColl(args, type, op, root, iter < warmup_iters/2 ? 0 : 1, iter));
   }
   TESTCHECK(completeColl(args));
 
