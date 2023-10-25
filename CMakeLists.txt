@@ -52,6 +52,7 @@ include(ROCMInstallTargets)
 include(ROCMCheckTargetIds)
 include(ROCMClients)
 include("/opt/rocm/include/rccl/rccl.h")
+include_directories("/opt/rocm/include/rccl/")
 
 # Build variables
 option(NO_MPI "Build RCCL-tests without MPI support.")
