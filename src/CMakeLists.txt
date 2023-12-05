@@ -37,6 +37,7 @@ function(add_rccl_test TEST)
         ${TEST_TARGET}
         PRIVATE
             rccl_common
+            hip::device
     )
     if (NOT WIN32)
         foreach(amdgpu_target ${AMDGPU_TARGETS})
