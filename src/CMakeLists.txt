@@ -6,9 +6,9 @@
 set_property(SOURCE common.cu timer.cc ../verifiable/verifiable.cu PROPERTY LANGUAGE CXX)
 add_library(rccl_common OBJECT common.cu timer.cc ../verifiable/verifiable.cu)
 if(USE_MPI)
-    target_link_libraries(rccl_common roc::rccl MPI::MPI_CXX)
+    target_link_libraries(rccl_common roc::rccl MPI::MPI_CXX hip::device)
 else()
-    target_link_libraries(rccl_common roc::rccl)
+    target_link_libraries(rccl_common roc::rccl hip::device)
 endif()
 
 function(add_relative_test test_name test_target)
@@ -37,7 +37,6 @@ function(add_rccl_test TEST)
         ${TEST_TARGET}
         PRIVATE
             rccl_common
-            hip::device
     )
     if (NOT WIN32)
         foreach(amdgpu_target ${AMDGPU_TARGETS})
