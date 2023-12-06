@@ -44,8 +44,6 @@ set(CMAKE_CXX_STANDARD 14)
 
 # Get additional packages required
 find_package(ROCM 0.7.3 CONFIG REQUIRED PATHS "${ROCM_PATH}")
-find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
-
 include(ROCMSetupVersion)
 include(ROCMCreatePackage)
 include(ROCMInstallTargets)
@@ -55,12 +53,36 @@ include(ROCMClients)
 # Build variables
 option(NO_MPI "Build RCCL-tests without MPI support.")
 option(MPI_PATH "Use MPI in the specified directory.")
-## Get default GPU targets using rocm_check_target_ids
-rocm_check_target_ids(
-    DEFAULT_AMDGPU_TARGETS
-    TARGETS "gfx803;gfx900:xnack-;gfx906:xnack-;gfx908:xnack-;gfx90a:xnack-;gfx90a:xnack+;gfx1030"
-)
-set(AMDGPU_TARGETS "${DEFAULT_AMDGPU_TARGETS}" CACHE STRING "List of specific machine types for these tests to target.")
+
+# Default GPU architectures to build
+#==================================================================================================
+set(DEFAULT_GPUS
+      gfx803
+      gfx900:xnack-
+      gfx906:xnack-
+      gfx908:xnack-
+      gfx90a:xnack-
+      gfx90a:xnack+
+      gfx940
+      gfx941
+      gfx942
+      gfx1030
+      gfx1100
+      gfx1101
+      gfx1102)
+
+set(AMDGPU_TARGETS ${DEFAULT_GPUS} CACHE STRING "List of specific machine types for these tests to target.")
+## Determine which GPU architectures to build for
+if (COMMAND rocm_check_target_ids)
+    message(STATUS "Checking for ROCm support for GPU targets:")
+    rocm_check_target_ids(GPU_TARGETS TARGETS "${AMDGPU_TARGETS}")
+else()
+    message(WARNING "Unable to check for supported GPU targets. Falling back to default GPUs")
+    set(GPU_TARGETS ${DEFAULT_GPUS})
+endif()
+message(STATUS "Compiling for ${GPU_TARGETS}")
+
+find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
 
 if (NOT NO_MPI)
     # CHECK for MPI Path first. User requested this directory explicitely
