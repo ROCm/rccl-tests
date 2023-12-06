@@ -71,15 +71,16 @@ set(DEFAULT_GPUS
       gfx1101
       gfx1102)
 
-set(AMDGPU_TARGETS ${DEFAULT_GPUS} CACHE STRING "List of specific machine types for these tests to target.")
+set(AMDGPU_TARGETS ${DEFAULT_GPUS} CACHE STRING "Target default GPUs if AMDGPU_TARGETS is not defined.")
 ## Determine which GPU architectures to build for
 if (COMMAND rocm_check_target_ids)
     message(STATUS "Checking for ROCm support for GPU targets:")
-    rocm_check_target_ids(GPU_TARGETS TARGETS "${AMDGPU_TARGETS}")
+    rocm_check_target_ids(SUPPORTED_GPUS TARGETS "${AMDGPU_TARGETS}")
 else()
     message(WARNING "Unable to check for supported GPU targets. Falling back to default GPUs")
-    set(GPU_TARGETS ${DEFAULT_GPUS})
+    set(SUPPORTED_GPUS ${DEFAULT_GPUS})
 endif()
+set(GPU_TARGETS "${SUPPORTED_GPUS}" CACHE STRING "List of specific GPU architectures to build for.")
 message(STATUS "Compiling for ${GPU_TARGETS}")
 
 find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
