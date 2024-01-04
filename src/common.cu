@@ -94,6 +94,7 @@ static int numDevices = 1;
 static int ranksPerGpu = 1;
 static int enable_multiranks = 0;
 static int delay_inout_place = 0;
+static int enable_out_of_place = 1;
 
 #define NUM_BLOCKS 32
 
@@ -653,8 +654,10 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
 	char rootName[100];
 	sprintf(rootName, "%6i", root);	
 	PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-        TESTCHECK(BenchTime(args, type, op, root, 0));
-        usleep(delay_inout_place);
+	if (enable_out_of_place) {
+        	TESTCHECK(BenchTime(args, type, op, root, 0));
+        	usleep(delay_inout_place);
+	}
         TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
     }
@@ -795,6 +798,7 @@ int main(int argc, char* argv[]) {
     {"cudagraph", required_argument, 0, 'G'},
     {"report_cputime", required_argument, 0, 'C'},
     {"average", required_argument, 0, 'a'},
+    {"out_of_place", required_argument, 0, 'O'},
 #ifdef RCCL_MULTIRANKPERGPU
     {"enable_multiranks", required_argument, 0, 'x'},
     {"ranks_per_gpu", required_argument, 0, 'R'},
@@ -807,9 +811,9 @@ int main(int argc, char* argv[]) {
     int c;
 
 #ifdef RCCL_MULTIRANKPERGPU    
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:R:x:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:a:y:s:u:h:R:x:q:", longopts, &longindex);
 #else
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:a:y:s:u:h:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:a:y:s:u:h:q:", longopts, &longindex);
 #endif
 
     if (c == -1)
@@ -907,6 +911,9 @@ int main(int argc, char* argv[]) {
       case 'C':
         report_cputime = strtol(optarg, NULL, 0);
         break;
+      case 'O':
+        enable_out_of_place = strtol(optarg, NULL, 0);
+        break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
@@ -953,6 +960,7 @@ int main(int argc, char* argv[]) {
             "[-T,--timeout <time in seconds>] \n\t"
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
+	    "[-O,--out_of_place <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
 #ifdef RCCL_MULTIRANKPERGPU
             "[-x,--enable_multiranks <0/1> enable using multiple ranks per GPU] \n\t"
@@ -1173,11 +1181,19 @@ testResult_t run() {
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  if (enable_out_of_place) {
+  	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
+  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+      	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
+  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+      	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  } else {
+	PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+        timeStr, "algbw", "busbw", "#wrong");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+        "(us)", "(GB/s)", "(GB/s)", "");
+  }
 
   struct testThread threads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1205,7 +1221,7 @@ testResult_t run() {
     threads[t].args.ncclId = ncclId;
     threads[t].args.comms=comms+t*nGpus*ranksPerGpu;
     threads[t].args.streams=streams+t*nGpus*ranksPerGpu;
-
+    threads[t].args.enable_out_of_place=enable_out_of_place;
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
