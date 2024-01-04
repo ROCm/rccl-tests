@@ -127,6 +127,7 @@ struct threadArgs {
   int localRank;
   int localNumDevices;
   int enable_multiranks;
+  int enable_out_of_place;
   int nRanks;
   void** sendbuffs;
   size_t sendBytes;
