@@ -1,7 +1,7 @@
 
 /*************************************************************************
- * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
- * Modifications Copyright (c) 2019-2021 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -11,10 +11,13 @@
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
+#include <type_traits>
 #include <getopt.h>
 #include <libgen.h>
 
 //#define DEBUG_PRINT
+
+#include "../verifiable/verifiable.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
@@ -54,6 +57,12 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 const char *test_memorytypes[nccl_NUM_MTYPES] = {"coarse", "fine", "host", "managed"};
 
+// For libnccl's < 2.13
+extern "C" __attribute__((weak)) char const* ncclGetLastError(ncclComm_t comm) {
+  return "";
+}
+
+int is_main_proc = 0;
 thread_local int is_main_thread = 0;
 
 // Command line parameter defaults
@@ -75,12 +84,17 @@ static int blocking_coll = 0;
 static int memorytype = 0;
 static int stress_cycles = 1;
 static uint32_t cumask[4];
+static int streamnull = 0;
+static int timeout = 0;
 static int cudaGraphLaunches = 0;
+static int report_cputime = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int numDevices = 1;
 static int ranksPerGpu = 1;
 static int enable_multiranks = 0;
+static int delay_inout_place = 0;
+static int enable_out_of_place = 1;
 
 #define NUM_BLOCKS 32
 
@@ -152,374 +166,164 @@ static bool minReqVersion(int rmajor, int rminor, int rpatch)
   return true;
 }
 
-double DeltaMaxValue(ncclDataType_t type) {
-  switch(type) {
-    case ncclHalf: return 1e-2;
-#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
-    case ncclBfloat16: return 1e-2;
-#endif
-    case ncclFloat: return 1e-5;
-    case ncclDouble: return 1e-12;
-    case ncclInt:
-#if NCCL_MAJOR >= 2
-    case ncclUint8:
-    //case ncclInt32:
-    case ncclUint32:
-#endif
-    case ncclInt64:
-    case ncclUint64: return 1e-200;
-  }
-  return 1e-200;
-}
-
-template<typename T> __device__
-double absDiff(T a, T b) {
-  return fabs((double)(b - a));
-}
-
-template<> __device__
-double absDiff<half>(half a, half b) {
-  float x = __half2float(a);
-  float y = __half2float(b);
-  return fabs((double)(y-x));
-}
-
-template<typename T> __device__
-float toFloat(T a) {
-  return (float)a;
-}
-template<> __device__
-float toFloat(half a) {
-  return __half2float(a);
-}
-#if defined(RCCL_BFLOAT16)
-template<> __device__
-float toFloat(rccl_bfloat16 a) {
-  return (float)(a);
-}
-#endif
-
-template<typename T, int BSIZE> __global__
-void deltaKern(void* A_, void* B_, size_t count, double* max) {
-  const T* A = (const T*)A_;
-  const T* B = (const T*)B_;
-  __shared__ double temp[BSIZE];
-  int tid = blockIdx.x*blockDim.x + threadIdx.x;
-  double locmax = 0.0;
-  for(size_t i=tid; i<count; i+=blockDim.x*gridDim.x) {
-
-    double delta = absDiff(A[i], B[i]);
-    if( delta > locmax ) {
-      locmax = delta;
-#ifdef DEBUG_PRINT
-      if (delta > .1) printf("Error at %ld/%ld(%p) : %f != %f\n", i, count, B+i, toFloat(A[i]), toFloat(B[i]));
-#endif
-    }
-  }
-
-  tid = threadIdx.x;
-  temp[tid] = locmax;
-  for(int stride = BSIZE/2; stride > 1; stride>>=1) {
-    __syncthreads();
-    if( tid < stride )
-      temp[tid] = temp[tid] > temp[tid+stride] ? temp[tid] : temp[tid+stride];
-  }
-  __syncthreads();
-  if( threadIdx.x == 0)
-    max[blockIdx.x] = temp[0] > temp[1] ? temp[0] : temp[1];
-}
-
-testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataType_t type, double* devmax) {
-  switch (type) {
-#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
-    case ncclBfloat16:
-      hipLaunchKernelGGL((deltaKern<rccl_bfloat16, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-#endif
-    case ncclHalf:
-      hipLaunchKernelGGL((deltaKern<half, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-    case ncclFloat:
-      hipLaunchKernelGGL((deltaKern<float, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-    case ncclDouble:
-      hipLaunchKernelGGL((deltaKern<double, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-    case ncclChar:
-#if NCCL_MAJOR >= 2
-    case ncclUint8:
-#endif
-      hipLaunchKernelGGL((deltaKern<uint8_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-    case ncclInt:
-#if NCCL_MAJOR >= 2
-    case ncclUint32:
-#endif
-      hipLaunchKernelGGL((deltaKern<uint32_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-    case ncclInt64:
-    case ncclUint64:
-      hipLaunchKernelGGL((deltaKern<uint64_t, 512>), dim3(1), dim3(512), 0, 0, results, expected, count, devmax); break;
-  }
+testResult_t CheckDelta(void* results, void* expected, size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int64_t *wrongEltN) {
+  ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, hipStreamDefault);
   HIPCHECK(hipDeviceSynchronize());
-  for (int i=1; i<NUM_BLOCKS; i++) devmax[0] = std::max(devmax[0], devmax[i]);
   return testSuccess;
 }
 
-// For integer values, we use values between 0 and 255
-template<typename T>
-__device__ T testValue(const size_t offset, const int rep, const int rank) {
-  uint8_t v = (rep+rank+offset) % 256;
-  return (T)v;
+testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks) {
+  ncclVerifiablePrepareExpected(data, count, (int)type, (int)op, nranks, seed, offset, hipStreamDefault);
+  return testSuccess;
 }
 
-// For floating point datatype, we use values between 0 and 1 otherwise the
-// Product operation will produce NaNs.
-template<>
-__device__ double testValue<double>(const size_t offset, const int rep, const int rank) {
-  return 1.0/(1.0+(double)testValue<int>(offset, rep, rank));
-}
-template<>
-__device__ float testValue<float>(const size_t offset, const int rep, const int rank) {
-  return 1.0/(1.0+(float)testValue<int>(offset, rep, rank));
-}
-template<>
-__device__ half testValue<half>(const size_t offset, const int rep, const int rank) {
-  return __float2half(testValue<float>(offset, rep, rank));
-}
-#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
-template<>
-__device__ rccl_bfloat16 testValue<rccl_bfloat16>(const size_t offset, const int rep, const int rank) {
-  return rccl_bfloat16(testValue<float>(offset, rep, rank));
-}
-#endif
-
-// Operations
-template<typename T>
-__device__ T ncclOpSum(T a, T b) { return a+b; }
-template<typename T>
-__device__ T ncclOpProd(T a, T b) { return a*b; }
-template<typename T>
-__device__ T ncclOpMax(T a, T b) { return a>b ? a : b; }
-template<typename T>
-__device__ T ncclOpMin(T a, T b) { return a<b ? a : b; }
-
-// Definitions for half
-template<>
-__device__ half ncclOpSum(half a, half b) { return __float2half(__half2float(a)+__half2float(b)); }
-template<>
-__device__ half ncclOpProd(half a, half b) { return __float2half(__half2float(a)*__half2float(b)); }
-template<>
-__device__ half ncclOpMax(half a, half b) { return __half2float(a)>__half2float(b) ? a : b; }
-template<>
-__device__ half ncclOpMin(half a, half b) { return __half2float(a)<__half2float(b) ? a : b; }
-
-template<typename T>
-__device__ T ncclPPOpIdent(T x, int arg) { return x; }
-template<typename T>
-__device__ T ncclPPOpMul(T x, int arg) { return x*T(arg); }
-template<typename T>
-__device__ T ncclPPOpDiv(T x, int arg) { return x/T(arg); }
-template<>
-__device__ half ncclPPOpMul(half x, int arg) {
-  return __float2half(__half2float(x)*float(arg));
-}
-template<>
-__device__ half ncclPPOpDiv(half x, int n) {
-  return __float2half(__half2float(x)/n);
-}
-#if RCCL_BFLOAT16 == 1
-template<>
-__device__ rccl_bfloat16 ncclPPOpMul(rccl_bfloat16 x, int arg) {
-  return (rccl_bfloat16)((float)(x)*float(arg));
-}
-template<>
-__device__ rccl_bfloat16 ncclPPOpDiv(rccl_bfloat16 x, int n) {
-  return (rccl_bfloat16)((float)(x)/(float)(n));;
-}
-#endif
-
-__host__ __device__ int preMulScalar(int rank) {
-  return 1 + rank%2;
+testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int rank) {
+  ncclVerifiablePrepareInput(data, count, (int)type, (int)op, nranks, rank, seed, offset, hipStreamDefault);
+  return testSuccess;
 }
 
-template<typename T, T (*Op)(T, T), T(*PreOp)(T,int), T(*PostOp)(T,int)>
-__global__ void InitDataReduceKernel(T* data, const size_t N, const size_t offset, const int rep, const int nranks) {
-  for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x) {
-    T val = testValue<T>(o+offset, rep, 0);
-    val = PreOp(val, preMulScalar(0));
-    for (int i=1; i<nranks; i++) {
-      T val1 = testValue<T>(o+offset, rep, i);
-      val1 = PreOp(val1, preMulScalar(i));
-      val = Op(val, val1);
-    }
-    data[o] = PostOp(val, nranks);
+void Barrier(struct threadArgs *args) {
+  thread_local int epoch = 0;
+  static pthread_mutex_t lock[2] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+  static pthread_cond_t cond[2] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
+  static int counter[2] = {0, 0};
+
+  pthread_mutex_lock(&lock[epoch]);
+  if(++counter[epoch] == args->nThreads)
+    pthread_cond_broadcast(&cond[epoch]);
+
+  if(args->thread+1 == args->nThreads) {
+    while(counter[epoch] != args->nThreads)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+    #ifdef MPI_SUPPORT
+      MPI_Barrier(MPI_COMM_WORLD);
+    #endif
+    counter[epoch] = 0;
+    pthread_cond_broadcast(&cond[epoch]);
   }
+  else {
+    while(counter[epoch] != 0)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+  }
+  pthread_mutex_unlock(&lock[epoch]);
+  epoch ^= 1;
 }
 
-#define KERN(type, op, preop, postop) (void*)InitDataReduceKernel<type, op<type>, preop<type>, postop<type> >
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
-  #define OPS(type) \
-    KERN(type, ncclOpSum, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpProd, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMax, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMin, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpSum/*Avg*/, ncclPPOpIdent, ncclPPOpDiv), \
-    KERN(type, ncclOpSum/*PreMulSum*/, ncclPPOpMul, ncclPPOpIdent)
-#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
-  #define OPS(type) \
-    KERN(type, ncclOpSum, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpProd, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMax, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMin, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpSum/*Avg*/, ncclPPOpIdent, ncclPPOpDiv)
-#else
-  #define OPS(type) \
-    KERN(type, ncclOpSum, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpProd, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMax, ncclPPOpIdent, ncclPPOpIdent), \
-    KERN(type, ncclOpMin, ncclPPOpIdent, ncclPPOpIdent)
-#endif
-
-static void* const redInitDataKerns[test_opNumMax*ncclNumTypes] = {
-  OPS(int8_t), OPS(uint8_t), OPS(int32_t), OPS(uint32_t), OPS(int64_t), OPS(uint64_t), OPS(half), OPS(float), OPS(double),
-#if NCCL_MAJOR >= 2 && RCCL_BFLOAT16 == 1
-  OPS(rccl_bfloat16)
-#endif
-};
-
-testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks) {
-  dim3 grid = { 32, 1, 1 };
-  dim3 block = { 256, 1, 1 };
-  void* args[5] = { (void*)&data, (void*)&count, (void*)&offset, (void*)&rep, (void*)&nranks };
-  HIPCHECK(hipLaunchKernel(redInitDataKerns[type*test_opNumMax+op], grid, block, args, 0, hipStreamDefault));
-  return testSuccess;
-}
-
+// Inter-thread/process barrier+allreduce. The quality of the return value
+// for average=0 (which means broadcast from rank=0) is dubious. The returned
+// value will actually be the result of process-local broadcast from the local thread=0.
 template<typename T>
-__global__ void InitDataKernel(T* data, const size_t N, const int rep, const int rank) {
-  for (size_t o=blockIdx.x*blockDim.x+threadIdx.x; o<N; o+=gridDim.x*blockDim.x)
-    data[o] = testValue<T>(o, rep, rank);
-}
+void Allreduce(struct threadArgs* args, T* value, int average) {
+  thread_local int epoch = 0;
+  static pthread_mutex_t lock[2] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+  static pthread_cond_t cond[2] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
+  static T accumulator[2];
+  static int counter[2] = {0, 0};
 
-static void* const initDataKerns[ncclNumTypes] = {
-  (void*)InitDataKernel<  int8_t>,
-  (void*)InitDataKernel< uint8_t>,
-  (void*)InitDataKernel< int32_t>,
-  (void*)InitDataKernel<uint32_t>,
-  (void*)InitDataKernel< int64_t>,
-  (void*)InitDataKernel<uint64_t>,
-  (void*)InitDataKernel<    half>,
-  (void*)InitDataKernel<   float>,
-  (void*)InitDataKernel<  double>,
-#if RCCL_BFLOAT16 == 1 && NCCL_MAJOR >= 2
-  (void*)InitDataKernel<rccl_bfloat16>
-#endif
-};
-
-template<typename T>
-testResult_t InitDataType(void* dest, const size_t N, const int rep, const int rank) {
-  T* ptr = (T*)dest;
-  hipLaunchKernelGGL((InitDataKernel), dim3(16), dim3(512), 0, 0, ptr, N, rep, rank);
-  return testSuccess;
-}
-
-testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank) {
-  dim3 grid = { 32, 1, 1 };
-  dim3 block = { 256, 1, 1 };
-  void* args[4] = { (void*)&data, (void*)&count, (void*)&rep, (void*)&rank };
-  HIPCHECK(hipLaunchKernel(initDataKerns[type], grid, block, args, 0, hipStreamDefault));
-  return testSuccess;
-}
-
-void Barrier(struct threadArgs* args) {
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
-  args->barrier[args->barrier_idx] = args->thread + 1;
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    MPI_Barrier(MPI_COMM_WORLD);
-#endif
-    args->barrier[args->barrier_idx] = 0;
+  pthread_mutex_lock(&lock[epoch]);
+  if(counter[epoch] == 0) {
+    if(average != 0 || args->thread == 0) accumulator[epoch] = *value;
   } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
-  }
-  args->barrier_idx=!args->barrier_idx;
-}
-
-// Inter-thread/process barrier+allreduce
-void Allreduce(struct threadArgs* args, double* value, int average) {
-  while (args->barrier[args->barrier_idx] != args->thread) pthread_yield();
-  double val = *value;
-  if (args->thread > 0) {
-    double val2 = args->reduce[args->barrier_idx];
-    if (average == 1) val += val2;
-    if (average == 2) val = std::min(val, val2);
-    if (average == 3) val = std::max(val, val2);
-  }
-  if (average || args->thread == 0) args->reduce[args->barrier_idx] = val;
-  args->barrier[args->barrier_idx] = args->thread + 1;
-  if (args->thread+1 == args->nThreads) {
-#ifdef MPI_SUPPORT
-    if (average != 0) {
-      MPI_Op op = average == 1 ? MPI_SUM : average == 2 ? MPI_MIN : MPI_MAX;
-      MPI_Allreduce(MPI_IN_PLACE, (void*)&args->reduce[args->barrier_idx], 1, MPI_DOUBLE, op, MPI_COMM_WORLD);
+    switch(average) {
+    case /*r0*/ 0: if(args->thread == 0) accumulator[epoch] = *value; break;
+    case /*avg*/1: accumulator[epoch] += *value; break;
+    case /*min*/2: accumulator[epoch] = std::min<T>(accumulator[epoch], *value); break;
+    case /*max*/3: accumulator[epoch] = std::max<T>(accumulator[epoch], *value); break;
+    case /*sum*/4: accumulator[epoch] += *value; break;
     }
-#endif
-    if (average == 1) args->reduce[args->barrier_idx] /= args->nProcs*args->nThreads;
-    args->reduce[1-args->barrier_idx] = 0;
-    args->barrier[args->barrier_idx] = 0;
-  } else {
-    while (args->barrier[args->barrier_idx]) pthread_yield();
   }
-  *value = args->reduce[args->barrier_idx];
-  args->barrier_idx=!args->barrier_idx;
+
+  if(++counter[epoch] == args->nThreads)
+    pthread_cond_broadcast(&cond[epoch]);
+
+  if(args->thread+1 == args->nThreads) {
+    while(counter[epoch] != args->nThreads)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+
+    #ifdef MPI_SUPPORT
+    if(average != 0) {
+      static_assert(std::is_same<T, long long>::value || std::is_same<T, double>::value, "Allreduce<T> only for T in {long long, double}");
+      MPI_Datatype ty = std::is_same<T, long long>::value ? MPI_LONG_LONG :
+                        std::is_same<T, double>::value ? MPI_DOUBLE :
+                        MPI_Datatype();
+      MPI_Op op = average == 1 ? MPI_SUM :
+                  average == 2 ? MPI_MIN :
+                  average == 3 ? MPI_MAX :
+                  average == 4 ? MPI_SUM : MPI_Op();
+      MPI_Allreduce(MPI_IN_PLACE, (void*)&accumulator[epoch], 1, ty, op, MPI_COMM_WORLD);
+    }
+    #endif
+
+    if(average == 1) accumulator[epoch] /= args->totalProcs*args->nThreads;
+    counter[epoch] = 0;
+    pthread_cond_broadcast(&cond[epoch]);
+  }
+  else {
+    while(counter[epoch] != 0)
+      pthread_cond_wait(&cond[epoch], &lock[epoch]);
+  }
+  pthread_mutex_unlock(&lock[epoch]);
+
+  *value = accumulator[epoch];
+  epoch ^= 1;
 }
 
-testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, double *delta) {
+testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int64_t *wrongElts) {
+  int nranks = args->nProcs*args->nGpus*args->nThreads;
   size_t count = args->expectedBytes/wordSize(type);
-  double maxDelta = 0.0;
+
+  int64_t *wrongPerGpu = nullptr;
+  HIPCHECK(hipHostMalloc((void**)&wrongPerGpu, args->nGpus*sizeof(int64_t), hipHostMallocMapped));
+  
   for (int i=0; i<args->nGpus*args->nRanks; i++) {
     int device;
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i);
     NCCLCHECK(ncclCommCuDevice(args->comms[i], &device));
     HIPCHECK(hipSetDevice(device));
     void *data = in_place ? ((void *)((uintptr_t)args->recvbuffs[i] + args->recvInplaceOffset*rank)) : args->recvbuffs[i];
-    TESTCHECK(CheckDelta(data , args->expected[i], count, type, args->deltaHost));
-    maxDelta = std::max(*(args->deltaHost), maxDelta);
 
-#ifdef DEBUG_PRINT
-    //if (rank == 0) {
-      int *expectedHost = (int *)malloc(args->expectedBytes);
-      int *dataHost = (int *)malloc(args->expectedBytes);
+    TESTCHECK(CheckDelta(data, args->expected[i], count, 0, type, op, 0, nranks, wrongPerGpu+i));
 
-      hipMemcpy(expectedHost, args->expected[rank], args->expectedBytes, hipMemcpyDeviceToHost);
+#if 1 && DEBUG_PRINT
+    if (args->reportErrors && wrongPerGpu[i] != 0) {
+      printf("rank=%d #wrong=%d\n", rank, (int)wrongPerGpu[i]);
+      char *expectedHost = (char*)malloc(args->expectedBytes);
+      char *dataHost = (char*)malloc(args->expectedBytes);
+      int eltsz = wordSize(type);
+      hipMemcpy(expectedHost, args->expected[i], args->expectedBytes, hipMemcpyDeviceToHost);
       hipMemcpy(dataHost, data, args->expectedBytes, hipMemcpyDeviceToHost);
-      int j, k, l;
-      for (j=0; j<args->expectedBytes/sizeof(int); j++)
-        if (expectedHost[j] != dataHost[j]) break;
-      k = j;
-      for (; j<args->expectedBytes/sizeof(int); j++)
-        if (expectedHost[j] == dataHost[j]) break;
-      l = j;
-      printf("\n Rank [%d] Expected: ", rank);
-      for (j=k; j<args->expectedBytes/sizeof(int) && j<l; j++) {
-        printf("%d:%d ", j, expectedHost[j]);
+
+      for(int j=0; j<args->expectedBytes/eltsz; j++) {
+        unsigned long long want, got;
+        want = 0;
+        memcpy(&want, expectedHost + j*eltsz, eltsz);
+        got = 0;
+        memcpy(&got, dataHost + j*eltsz, eltsz);
+        if(want != got) {
+          printf(" rank=%d elt[%d]: want=0x%llx got=0x%llx\n", rank, j, want, got);
+        }
       }
-      printf("\n Rank [%d] Actual  : ", rank);
-      for (j=k; j<args->expectedBytes/sizeof(int) && j<l; j++) {
-        printf("%d:%d ", j, dataHost[j]);
-      }
-      printf("\n");
       free(expectedHost);
       free(dataHost);
-    //}
+    }
 #endif
   }
-  double nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
-  if (args->reportErrors && maxDelta > DeltaMaxValue(type)*(nranks - 1)) args->errors[0]++;
-  *delta = maxDelta;
+
+  *wrongElts = 0;
+  for (int i=0; i < args->nGpus; i++) *wrongElts += wrongPerGpu[i];
+  hipHostFree(wrongPerGpu);
+
+  if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
 }
-
+    
 testResult_t testStreamSynchronize(int nStreams, hipStream_t* streams, ncclComm_t* comms) {
   hipError_t hipErr;
   int remaining = nStreams;
   int* done = (int*)malloc(sizeof(int)*nStreams);
   memset(done, 0, sizeof(int)*nStreams);
+  timer tim;
+  
   while (remaining) {
    int idle = 1;
    for (int i=0; i<nStreams; i++) {
@@ -548,11 +352,24 @@ testResult_t testStreamSynchronize(int nStreams, hipStream_t* streams, ncclComm_
          NCCLCHECK(ncclAsyncErr);
        }
      }
+     double delta = tim.elapsed();
+     if (delta > timeout && timeout > 0) {
+       for (int i=0; i<nStreams; i++)
+         NCCLCHECK(ncclCommAbort(comms[i]));
+       char hostname[1024];
+       getHostName(hostname, 1024);
+       printf("%s: Test timeout (%ds) %s:%d\n",
+           hostname,
+           timeout,
+           __FILE__,__LINE__);
+       free(done);
+       return testTimeout;
+     }
 #endif
    }
 
    // We might want to let other threads (including NCCL threads) use the CPU.
-   if (idle) pthread_yield();
+   if (idle) sched_yield();
   }
   free(done);
   return testSuccess;
@@ -590,19 +407,18 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         rccl_bfloat16 bf16;
         #endif
       };
-      int scalar = preMulScalar(rank);
       switch(type) {
-      case ncclInt8: i8 = int8_t(scalar); break;
-      case ncclUint8: u8 = uint8_t(scalar); break;
-      case ncclInt32: i32 = int32_t(scalar); break;
-      case ncclUint32: u32 = uint32_t(scalar); break;
-      case ncclInt64: i64 = int32_t(scalar); break;
-      case ncclUint64: u64 = uint32_t(scalar); break;
-      case ncclFloat16: f16 = __float2half(float(scalar)); break;
-      case ncclFloat32: f32 = float(scalar); break;
-      case ncclFloat64: f64 = double(scalar); break;
+      case ncclInt8: i8 = ncclVerifiablePremulScalar<int8_t>(rank); break;
+      case ncclUint8: u8 = ncclVerifiablePremulScalar<uint8_t>(rank); break;
+      case ncclInt32: i32 = ncclVerifiablePremulScalar<int32_t>(rank); break;
+      case ncclUint32: u32 = ncclVerifiablePremulScalar<uint32_t>(rank); break;
+      case ncclInt64: i64 = ncclVerifiablePremulScalar<int64_t>(rank); break;
+      case ncclUint64: u64 = ncclVerifiablePremulScalar<uint64_t>(rank); break;
+      case ncclFloat16: f16 = ncclVerifiablePremulScalar<half>(rank); break;
+      case ncclFloat32: f32 = ncclVerifiablePremulScalar<float>(rank); break;
+      case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
       #if defined(RCCL_BFLOAT16)
-      case ncclBfloat16: bf16 = (rccl_bfloat16)(float(scalar)); break;
+      case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
       #endif
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
@@ -637,7 +453,7 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
-//EDGAR: Revisit because of cudaGraphLaunches
+//RCCL: Revisit because of cudaGraphLaunches
 testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
@@ -645,9 +461,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     TESTCHECK(args->collTest->initData(args, type, op, root, 99, in_place));
   }
 
-  // Sync
-  TESTCHECK(startColl(args, type, op, root, in_place, 0));
-  TESTCHECK(completeColl(args));
+  if (warmup_iters) {
+    // Sync
+    TESTCHECK(startColl(args, type, op, root, in_place, 0));
+    TESTCHECK(completeColl(args));
+  }
 
   Barrier(args);
 
@@ -657,16 +475,17 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (cudaGraphLaunches >= 1) {
     // Begin cuda graph capture
     for (int i=0; i<args->nGpus*args->nRanks; i++) {
-      // Thread local mode is needed for:
-      // - Multi-thread mode
-      // - P2P pre-connect
+      // Thread local mdoe is needed for:
+      // - Multi-thread mode: where graph capture and instantiation can happen concurrently across threads
+      // - P2P pre-connect: when there is no warm-up, P2P pre-connect is done during graph capture.
+      //   Since pre-connect calls cudaMalloc, we cannot use global capture mode
       HIPCHECK(hipStreamBeginCapture(args->streams[i], hipStreamCaptureModeThreadLocal));
     }
   }
 #endif
 
   // Performance Benchmark
-  auto start = std::chrono::high_resolution_clock::now();
+  timer tim;
   for (int iter = 0; iter < iters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
     for (int aiter = 0; aiter < agg_iters; aiter++) {
@@ -687,7 +506,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     // Resync CPU, restart timing, launch cuda graph
     Barrier(args);
-    start = std::chrono::high_resolution_clock::now();
+    tim.reset();
     for (int l=0; l<cudaGraphLaunches; l++) {
       for (int i=0; i<args->nGpus*args->nRanks; i++) {
         HIPCHECK(hipGraphLaunch(graphExec[i], args->streams[i]));
@@ -696,10 +515,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 #endif
 
+  double cputimeSec = tim.elapsed()/(iters*agg_iters);
   TESTCHECK(completeColl(args));
 
-  auto delta = std::chrono::high_resolution_clock::now() - start;
-  double deltaSec = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count();
+  double deltaSec = tim.elapsed();
   deltaSec = deltaSec/(iters*agg_iters);
   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
   Allreduce(args, &deltaSec, average);
@@ -719,8 +538,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   Barrier(args);
 
-  double maxDelta = 0;
-  bool error = false;
+  int64_t wrongElts = 0;
   static __thread int rep = 0;
   rep++;
   if (datacheck) {
@@ -768,13 +586,15 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
 #endif
 
-      TESTCHECK(CheckData(args, type, op, root, in_place, &maxDelta));
+      TESTCHECK(CheckData(args, type, op, root, in_place, &wrongElts));
 
       //aggregate delta from all threads and procs
-      Allreduce(args, &maxDelta, 3);
+      long long wrongElts1 = wrongElts;
+      Allreduce(args, &wrongElts1, /*sum*/4);
+      wrongElts = wrongElts1;
   }
 
-  double timeUsec = deltaSec*1.0E6;
+  double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
   char timeStr[100];
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
@@ -783,10 +603,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
   }
-  if (datacheck) {
-     PRINT("  %7s  %6.2f  %6.2f  %5.0le%s", timeStr, algBw, busBw, maxDelta, error ? "*" : "");
+  if (args->reportErrors) {
+    PRINT("  %7s  %6.2f  %6.2f  %5g", timeStr, algBw, busBw, (double)wrongElts);
   } else {
-     PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
+    PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
   }
 
   args->bw[0] += busBw;
@@ -809,6 +629,9 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
 }
 
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
+  // Sync to avoid first-call timeout
+  Barrier(args);
+
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
@@ -819,7 +642,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   // Warm-up for small size
   setupArgs(args->minbytes, type, args);
   for (int iter = 0; iter < warmup_iters; iter++) {
-    TESTCHECK(startColl(args, type, op, root, 0, iter));
+    TESTCHECK(startColl(args, type, op, root, iter < warmup_iters/2 ? 0 : 1, iter));
   }
   TESTCHECK(completeColl(args));
 
@@ -828,8 +651,13 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
-        print_line_header(std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, root);
-        TESTCHECK(BenchTime(args, type, op, root, 0));
+	char rootName[100];
+	sprintf(rootName, "%6i", root);	
+	PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+	if (enable_out_of_place) {
+        	TESTCHECK(BenchTime(args, type, op, root, 0));
+        	usleep(delay_inout_place);
+	}
         TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
     }
@@ -841,10 +669,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // Set device to the first of our GPUs. If we don't do that, some operations
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
-  int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus;
-  if (enable_multiranks)
-    gpuid = gpuid % numDevices;
-  HIPCHECK(hipSetDevice(gpuid));
+  HIPCHECK(hipSetDevice(args->gpus[0]));
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
   return testSuccess;
 }
@@ -855,14 +680,11 @@ testResult_t threadInit(struct threadArgs* args) {
   int nranks =  args->nProcs*args->nThreads*args->nGpus*args->nRanks;
 
   //set main thread again
-  is_main_thread = (args->proc == 0 && args->thread == 0) ? 1 : 0;
+  is_main_thread = (is_main_proc && args->thread == 0) ? 1 : 0;
 
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (enable_multiranks)
-      gpuid = gpuid % numDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int j=0; j<args->nRanks; j++) {
       int rank = (args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + j;
@@ -894,7 +716,7 @@ testResult_t threadLaunch(struct testThread* thread) {
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, int nranks) {
+testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
   if (memorytype == ncclFine) {
     HIPCHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
     HIPCHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
@@ -968,11 +790,15 @@ int main(int argc, char* argv[]) {
     {"datatype", required_argument, 0, 'd'},
     {"root", required_argument, 0, 'r'},
     {"blocking", required_argument, 0, 'z'},
-    {"memory_type", required_argument, 0, 'y'},
-    {"stress_cycles", required_argument, 0, 's'},
-    {"cumask", required_argument, 0, 'u'},
+    {"memory_type", required_argument, 0, 'y'}, //RCCL
+    {"stress_cycles", required_argument, 0, 's'}, //RCCL
+    {"cumask", required_argument, 0, 'u'},        //RCCL
+    {"stream_null", required_argument, 0, 'y'}, //NCCL
+    {"timeout", required_argument, 0, 'T'},     //NCCL
     {"cudagraph", required_argument, 0, 'G'},
+    {"report_cputime", required_argument, 0, 'C'},
     {"average", required_argument, 0, 'a'},
+    {"out_of_place", required_argument, 0, 'O'},
 #ifdef RCCL_MULTIRANKPERGPU
     {"enable_multiranks", required_argument, 0, 'x'},
     {"ranks_per_gpu", required_argument, 0, 'R'},
@@ -983,10 +809,11 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-#ifdef RCCL_MULTIRANKPERGPU
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:R:x:", longopts, &longindex);
+
+#ifdef RCCL_MULTIRANKPERGPU    
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:a:y:s:u:h:R:x:q:", longopts, &longindex);
 #else
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:G:a:y:s:u:h:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:a:y:s:u:h:q:", longopts, &longindex);
 #endif
 
     if (c == -1)
@@ -1052,7 +879,7 @@ int main(int argc, char* argv[]) {
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
         break;
-      case 'y':
+      case 'Y':
         memorytype = ncclstringtomtype(optarg);
         break;
       case 's':
@@ -1067,6 +894,12 @@ int main(int argc, char* argv[]) {
             mask = strtok(NULL, ",");
           };
         }
+	break;
+      case 'y':
+        streamnull = strtol(optarg, NULL, 0);
+        break;
+      case 'T':
+        timeout = strtol(optarg, NULL, 0);
         break;
       case 'G':
 #if (NCCL_MAJOR > 2 || (NCCL_MAJOR >= 2 && NCCL_MINOR >= 9)) && HIP_VERSION >= 50221310
@@ -1074,6 +907,12 @@ int main(int argc, char* argv[]) {
 #else
         printf("Option -G (HIP graph) not supported before NCCL 2.9 + ROCm 5.2 Ignoring\n");
 #endif
+        break;
+      case 'C':
+        report_cputime = strtol(optarg, NULL, 0);
+        break;
+      case 'O':
+        enable_out_of_place = strtol(optarg, NULL, 0);
         break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
@@ -1086,6 +925,9 @@ int main(int argc, char* argv[]) {
         ranksPerGpu = (int)strtol(optarg, NULL, 0);
         break;
 #endif
+      case 'q':
+        delay_inout_place = (int)strtol(optarg, NULL, 10);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1111,18 +953,23 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
-            "[-y,--memory_type <coarse/fine/host/managed>] \n\t"
+            "[-Y,--memory_type <coarse/fine/host/managed>] \n\t"
             "[-s,--stress_cycles <number of cycles>] \n\t"
             "[-u,--cumask <d0,d1,d2,d3>] \n\t"
+            "[-y,--stream_null <0/1>] \n\t"
+            "[-T,--timeout <time in seconds>] \n\t"
             "[-G,--cudagraph <num graph launches>] \n\t"
+            "[-C,--report_cputime <0/1>] \n\t"
+	    "[-O,--out_of_place <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
 #ifdef RCCL_MULTIRANKPERGPU
             "[-x,--enable_multiranks <0/1> enable using multiple ranks per GPU] \n\t"
             "[-R,--ranks_per_gpu] \n\t"
 #endif
+            "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-h,--help]\n",
-	    basename(argv[0]));
-	return 0;
+          basename(argv[0]));
+        return 0;
     }
   }
 
@@ -1163,23 +1010,32 @@ int main(int argc, char* argv[]) {
 }
 
 testResult_t run() {
-  int nProcs = 1, proc = 0;
+  int totalProcs = 1, proc = 0, ncclProcs = 1, ncclProc = 0, color = 0;
   int localRank = 0;
   int localSize = 0;
   char hostname[1024];
   getHostName(hostname, 1024);
 
 #ifdef MPI_SUPPORT
-  MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
+  MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
-  uint64_t hostHashs[nProcs];
+  uint64_t hostHashs[totalProcs];
   hostHashs[proc] = getHostHash(hostname);
   MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
-  for (int p=0; p<nProcs; p++) {
+  for (int p=0; p<totalProcs; p++) {
     if (p == proc) break;
     if (hostHashs[p] == hostHashs[proc]) localRank++;
   }
-  for (int p=0; p<nProcs; p++) {
+
+  char* str = getenv("NCCL_TESTS_SPLIT_MASK");
+  uint64_t mask = str ? strtoul(str, NULL, 16) : 0;
+  MPI_Comm mpi_comm;
+  color = proc & mask;
+  MPI_Comm_split(MPI_COMM_WORLD, color, proc, &mpi_comm);
+  MPI_Comm_size(mpi_comm, &ncclProcs);
+  MPI_Comm_rank(mpi_comm, &ncclProc);
+
+  for (int p=0; p<totalProcs; p++) {
     if (hostHashs[p] == hostHashs[proc]) localSize++;
   }
   if (nGpus * localSize > numDevices)
@@ -1188,10 +1044,12 @@ testResult_t run() {
       return testNcclError;
   }
 #endif
-  is_main_thread = (proc == 0) ? 1 : 0;
+  is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
-  PRINT("# nThreads: %d nGpus: %d nRanks: %d minBytes: %ld maxBytes: %ld step: %ld(%s) warmupIters: %d iters: %d validation: %d \n", nThreads, nGpus, ranksPerGpu, minBytes, maxBytes,
-      (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes", warmup_iters, iters, datacheck);
+  PRINT("# nThreads: %d nGpus: %d nRanks: %d minBytes: %ld maxBytes: %ld step: %ld(%s) warmupIters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
+	nThreads, nGpus, ranksPerGpu, minBytes, maxBytes,
+	(stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
+	warmup_iters, iters, agg_iters, datacheck, cudaGraphLaunches);
   if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
   PRINT("#\n");
@@ -1201,6 +1059,8 @@ testResult_t run() {
   char line[MAX_LINE];
   int len = 0;
   size_t maxMem = ~0;
+  char* envstr = getenv("NCCL_TESTS_DEVICE");
+  int gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nThreads*nGpus; i++) {
     int hipDev = localRank*nThreads*nGpus+i;
     if (enable_multiranks)
@@ -1218,11 +1078,11 @@ testResult_t run() {
     }
   }
 #if MPI_SUPPORT
-  char *lines = (proc == 0) ? (char *)malloc(nProcs*MAX_LINE) : NULL;
+  char *lines = (proc == 0) ? (char *)malloc(totalProcs*MAX_LINE) : NULL;
   // Gather all output in rank order to root (0)
   MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
   if (proc == 0) {
-    for (int p = 0; p < nProcs; p++)
+    for (int p = 0; p < totalProcs; p++)
       PRINT("%s", lines+MAX_LINE*p);
     free(lines);
   }
@@ -1239,66 +1099,67 @@ testResult_t run() {
   }
 
   ncclUniqueId ncclId;
-  if (proc == 0) {
+  if (ncclProc == 0) {
     NCCLCHECK(ncclGetUniqueId(&ncclId));
   }
 #ifdef MPI_SUPPORT
-  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, mpi_comm);
 #endif
+
+  int gpus[nGpus*nThreads];
   hipStream_t streams[nGpus*nThreads*ranksPerGpu];
   void* sendbuffs[nGpus*nThreads*ranksPerGpu];
   void* recvbuffs[nGpus*nThreads*ranksPerGpu];
   void* expected[nGpus*nThreads*ranksPerGpu];
   size_t sendBytes, recvBytes;
 
-  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nProcs*nGpus*nThreads*ranksPerGpu);
+  ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)ncclProcs*nGpus*nThreads*ranksPerGpu);
 
+  envstr = getenv("NCCL_TESTS_DEVICE");
+  gpu0 = envstr ? atoi(envstr) : -1;
   for (int ii=0; ii<nGpus*nThreads; ii++) {
     int gpuid = localRank*nThreads*nGpus+ii;
     if (enable_multiranks)
       gpuid = gpuid % numDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+
+    gpus[ii] = gpu0 != -1 ? gpu0+ii : gpuid;
+    HIPCHECK(hipSetDevice(gpus[ii]));
+
     for (int j=0; j<ranksPerGpu; j++) {
       int i = ii*ranksPerGpu+j;
-      TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes, nProcs*nThreads*nGpus*ranksPerGpu));
-      //PRINT("sendbuffs[%d]=%p(size=%lu) recvbuffs[%d]=%p(size=%lu)\n", i, sendbuffs[i], sendBytes, i, recvbuffs[i], recvBytes);
-      if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
-	PRINT("cumask: ");
-	for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
-	PRINT("\n");
-	HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
-      } else
-	HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
-      // initialize data buffer to avoid all zero data
-      TESTCHECK(InitData(sendbuffs[i], sendBytes, ncclUint8, 0, i));
-    }
-    HIPCHECK(hipDeviceSynchronize());
-  }
 
+      TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes));
+      if (streamnull)
+      	streams[i] = NULL;
+      else {
+	      if (cumask[0] || cumask[1] || cumask[2] || cumask[3]) {
+	         PRINT("cumask: ");
+	         for (int i = 0; i < 4 ; i++) PRINT("%x,", cumask[i]);
+	         PRINT("\n");
+	         HIPCHECK(hipExtStreamCreateWithCUMask(streams+i, 4, cumask));
+	      } else
+	         HIPCHECK(hipStreamCreateWithFlags(streams+i, hipStreamNonBlocking));
+      }
+    }
+  }
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus*ranksPerGpu);
   if (!parallel_init) {
-     if (nProcs == 1 && !enable_multiranks) {
-       int gpuArray[nGpus*nThreads];
-       for (int i=0; i<nGpus*nThreads; i++) gpuArray[i] = i;
-       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpuArray));
+     if (ncclProcs == 1 && !enable_multiranks) {
+       NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
      } else {
        NCCLCHECK(ncclGroupStart());
        for (int ii=0; ii<nGpus*nThreads; ii++) {
-	 int gpuid = localRank*nThreads*nGpus+ii;
-         if (enable_multiranks) {
-	   gpuid = gpuid % numDevices;
-	 }
-         HIPCHECK(hipSetDevice(gpuid));
+         HIPCHECK(hipSetDevice(gpus[ii]));
 	 if (!enable_multiranks) {
-	   NCCLCHECK(ncclCommInitRank(comms+ii, nProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+ii));
+	   NCCLCHECK(ncclCommInitRank(comms+ii, ncclProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+ii));
 	 }
 #ifdef RCCL_MULTIRANKPERGPU
 	 else
 	   for (int j=0; j<ranksPerGpu; j++) {
 	     int i = ii*ranksPerGpu+j;
-	     NCCLCHECK(ncclCommInitRankMulti(comms+i, nProcs*nThreads*nGpus*ranksPerGpu, ncclId, proc*nThreads*nGpus*ranksPerGpu+i, proc*nThreads*nGpus*ranksPerGpu+i));
+	     NCCLCHECK(ncclCommInitRankMulti(comms+i, ncclProcs*nThreads*nGpus*ranksPerGpu, ncclId,
+					     proc*nThreads*nGpus*ranksPerGpu+i, proc*nThreads*nGpus*ranksPerGpu+i));
 	   }
 #endif
        }
@@ -1316,12 +1177,23 @@ testResult_t run() {
     errors[t] = bw_count[t] = 0;
   }
 
-  PRINT("#\n");
-  print_header();
+  fflush(stdout);
 
-  int* sync = (int*)calloc(2, sizeof(int));
-  int* barrier = (int*)calloc(2, sizeof(int));
-  double* reduce = (double*)calloc(2, sizeof(double));
+  const char* timeStr = report_cputime ? "cputime" : "time";
+  PRINT("#\n");
+  if (enable_out_of_place) {
+  	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
+  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+      	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
+  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+      	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  } else {
+	PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+        timeStr, "algbw", "busbw", "#wrong");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+        "(us)", "(GB/s)", "(GB/s)", "");
+  }
 
   struct testThread threads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1332,32 +1204,29 @@ testResult_t run() {
     threads[t].args.stepbytes=stepBytes;
     threads[t].args.stepfactor=stepFactor;
     threads[t].args.localRank = localRank;
+
+    threads[t].args.totalProcs = totalProcs;
     threads[t].args.localNumDevices = numDevices;
     threads[t].args.enable_multiranks = enable_multiranks;
     threads[t].args.nRanks = ranksPerGpu;
-    threads[t].args.nProcs=nProcs;
-    threads[t].args.proc=proc;
+    threads[t].args.nProcs=ncclProcs;
+    threads[t].args.proc=ncclProc;
     threads[t].args.nThreads=nThreads;
     threads[t].args.thread=t;
     threads[t].args.nGpus=nGpus;
+    threads[t].args.gpus=gpus+t*nGpus;
     threads[t].args.sendbuffs = sendbuffs+t*nGpus*ranksPerGpu;
     threads[t].args.recvbuffs = recvbuffs+t*nGpus*ranksPerGpu;
     threads[t].args.expected = expected+t*nGpus*ranksPerGpu;
     threads[t].args.ncclId = ncclId;
     threads[t].args.comms=comms+t*nGpus*ranksPerGpu;
     threads[t].args.streams=streams+t*nGpus*ranksPerGpu;
-
-    threads[t].args.barrier = (volatile int*)barrier;
-    threads[t].args.barrier_idx = 0;
-    threads[t].args.reduce = (volatile double*)reduce;
-    threads[t].args.sync = (volatile int*)sync;
-    threads[t].args.sync_idx = 0;
-    threads[t].args.deltaHost = (delta + t*NUM_BLOCKS);
+    threads[t].args.enable_out_of_place=enable_out_of_place;
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
 
-    threads[t].args.reportErrors = 1;
+    threads[t].args.reportErrors = datacheck;
 
     threads[t].func = parallel_init ? threadInit : threadRunTests;
     if (t)
@@ -1406,8 +1275,8 @@ testResult_t run() {
   }
   HIPCHECK(hipHostFree(delta));
 
-  char* str = getenv("NCCL_TESTS_MIN_BW");
-  double check_avg_bw = str ? atof(str) : -1;
+  envstr = getenv("NCCL_TESTS_MIN_BW");
+  double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
   if (datacheck) PRINT("# Errors with asterisks indicate errors that have exceeded the maximum threshold.\n");
@@ -1419,6 +1288,7 @@ testResult_t run() {
 #endif
 
   // 'hip-memcheck --leak-check full' requires this
+  PRINT("%s\n", ncclGetLastError(NULL));
   hipDeviceReset();
 
   if (errors[0] || bw[0] < check_avg_bw*(0.9))

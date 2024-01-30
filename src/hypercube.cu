@@ -1,5 +1,6 @@
 /*************************************************************************
- * Copyright (c) 2016-2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -8,18 +9,6 @@
 #include "common.h"
 
 #define ALIGN 4
-
-void print_header() {
-  PRINT("# %10s  %12s  %8s            out-of-place                       in-place          \n", "", "", "");
-  PRINT("# %10s  %12s  %8s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type",
-        "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
-  PRINT("# %10s  %12s  %8s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %8s", size, count, typeName);
-}
 
 void HyperCubeGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   size_t base = (count/(ALIGN*nranks))*ALIGN;
@@ -37,18 +26,15 @@ testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncc
 
   int k=0;
   for (int i=0; i<args->nGpus; i++) {
-    int gpuid = args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (args->enable_multiranks)
-      gpuid = gpuid % args->localNumDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int l=0; l<args->nRanks; l++) {
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
       HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
       void* data = in_place ? ((char*)args->recvbuffs[k])+rank*args->sendBytes : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep + rank, 1, 0));
       for (int j=0; j<nranks; j++) {
-	TESTCHECK(InitData(((char*)args->expected[k])+args->sendBytes*j, sendcount, type, rep, j));
+	TESTCHECK(InitData(((char*)args->expected[k])+args->sendBytes*j, sendcount, 0, type, ncclSum, 33*rep + j, 1, 0));
       }
       k++;
     }
@@ -116,9 +102,16 @@ testResult_t HyperCubeRunTest(struct threadArgs* args, int root, ncclDataType_t 
     run_typenames = test_typenames;
   }
 
-  for (int i=0; i<type_count; i++) {
-    TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", -1));
+  // Check if this is a power of 2
+  int nRanks = args->nProcs*args->nThreads*args->nGpus;
+  if (nRanks && !(nRanks & (nRanks - 1))) {
+    for (int i=0; i<type_count; i++) {
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", -1));
+    }
+  } else {
+    printf("nRanks %d is not a power of 2, skipping\n", nRanks);
   }
+
   return testSuccess;
 }
 

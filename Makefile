@@ -4,9 +4,12 @@
 # See LICENCE.txt for license information
 #
 
-.PHONY : all clean
+BUILDDIR ?= build
+override BUILDDIR := $(abspath $(BUILDDIR))
 
-default : src.build
+.PHONY: all clean
+
+default: src.build
 
 TARGETS=$(filter-out src/hypercube.cu, $(wildcard src/*))
 
@@ -14,7 +17,7 @@ all:   ${TARGETS:%=%.build}
 clean: ${TARGETS:%=%.clean}
 
 %.build:
-	${MAKE} -C $* build
+	${MAKE} -C $* build BUILDDIR=${BUILDDIR}
 
 %.clean:
-	${MAKE} -C $* clean
+	${MAKE} -C $* clean BUILDDIR=${BUILDDIR}

@@ -2,7 +2,7 @@
 # Copyright 2022 Advanced Micro Devices, Inc.
 # ########################################################################
 #Adding pthread flag for linking
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 macro(check_mpi mpi_compiler mpi_lib_a mpi_lib_so mpi_bin_dir mpi_base_lib_dir mpi_inc_dir)
     find_program(MPI_MPICXX ${mpi_compiler} PATHS ${mpi_bin_dir} NO_DEFAULT_PATH)
     if (MPI_MPICXX)
@@ -44,8 +44,6 @@ set(CMAKE_CXX_STANDARD 14)
 
 # Get additional packages required
 find_package(ROCM 0.7.3 CONFIG REQUIRED PATHS "${ROCM_PATH}")
-find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
-
 include(ROCMSetupVersion)
 include(ROCMCreatePackage)
 include(ROCMInstallTargets)
@@ -55,12 +53,37 @@ include(ROCMClients)
 # Build variables
 option(NO_MPI "Build RCCL-tests without MPI support.")
 option(MPI_PATH "Use MPI in the specified directory.")
-## Get default GPU targets using rocm_check_target_ids
-rocm_check_target_ids(
-    DEFAULT_AMDGPU_TARGETS
-    TARGETS "gfx803;gfx900:xnack-;gfx906:xnack-;gfx908:xnack-;gfx90a:xnack-;gfx90a:xnack+;gfx1030"
-)
-set(AMDGPU_TARGETS "${DEFAULT_AMDGPU_TARGETS}" CACHE STRING "List of specific machine types for these tests to target.")
+
+# Default GPU architectures to build
+#==================================================================================================
+set(DEFAULT_GPUS
+      gfx803
+      gfx900:xnack-
+      gfx906:xnack-
+      gfx908:xnack-
+      gfx90a:xnack-
+      gfx90a:xnack+
+      gfx940
+      gfx941
+      gfx942
+      gfx1030
+      gfx1100
+      gfx1101
+      gfx1102)
+
+set(AMDGPU_TARGETS ${DEFAULT_GPUS} CACHE STRING "Target default GPUs if AMDGPU_TARGETS is not defined.")
+## Determine which GPU architectures to build for
+if (COMMAND rocm_check_target_ids)
+    message(STATUS "Checking for ROCm support for GPU targets:")
+    rocm_check_target_ids(SUPPORTED_GPUS TARGETS "${AMDGPU_TARGETS}")
+else()
+    message(WARNING "Unable to check for supported GPU targets. Falling back to default GPUs")
+    set(SUPPORTED_GPUS ${DEFAULT_GPUS})
+endif()
+set(GPU_TARGETS "${SUPPORTED_GPUS}" CACHE STRING "List of specific GPU architectures to build for.")
+message(STATUS "Compiling for ${GPU_TARGETS}")
+
+find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
 
 if (NOT NO_MPI)
     # CHECK for MPI Path first. User requested this directory explicitely
@@ -108,7 +131,7 @@ if (NOT NO_MPI)
     if (NOT MPI_MPICXX)
         check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi3/bin /usr/lib64/mpi/gcc/openmpi3 /usr/lib64/mpi/gcc/openmpi3/include)
     endif()
-    
+
     # Check for Open MPI v2 SLES installation
     if (NOT MPI_MPICXX)
         check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi2/bin /usr/lib64/mpi/gcc/openmpi2 /usr/lib64/mpi/gcc/openmpi2/include)
