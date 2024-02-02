@@ -84,4 +84,3 @@ ${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_V
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"
 	$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}
-
