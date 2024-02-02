@@ -10,18 +10,6 @@
 
 #define USE_RCCL_GATHER_SCATTER
 
-void print_header() {
-  PRINT("# %10s  %12s  %6s  %6s            out-of-place                       in-place          \n", "", "", "", "");
-  PRINT("# %10s  %12s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "size", "count", "type", "redop",
-        "time", "algbw", "busbw", "error", "time", "algbw", "busbw", "error");
-  PRINT("# %10s  %12s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-}
-
-void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root) {
-  PRINT("%12li  %12li  %6s  %6s", size, count, typeName, opName);
-}
-
 void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   if (count < nranks*nranks/2) {
     *sendcount = 0;
@@ -45,17 +33,14 @@ testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncc
 
   int k=0;
   for (int i=0; i<args->nGpus; i++) {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    int gpuid = str ? atoi(str) : args->localRank*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    if (args->enable_multiranks)
-      gpuid = gpuid % args->localNumDevices;
-    HIPCHECK(hipSetDevice(gpuid));
+    HIPCHECK(hipSetDevice(args->gpus[i]));
 
     for (int l=0; l<args->nRanks; l++) {
       int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
       HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
       void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, type, rep, rank));
+      TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep+rank, 1, 0));
+
 #if 0
       int *dataHost = (int *)malloc(args->sendBytes);
       hipMemcpy(dataHost, data, args->sendBytes, hipMemcpyDeviceToHost);
@@ -66,24 +51,25 @@ testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncc
       printf("\n");
       free(dataHost);
 #endif
+
       size_t rdisp = 0;
       size_t data_count = sendcount*2/nranks;
       size_t chunksize = data_count/nranks;
       for (int j=0; j<nranks; j++) {
-	size_t scount = 0, rcount = ((j+rank)%nranks)*chunksize;
-	if ((j+rank)%nranks == 0)
+        size_t scount = 0, rcount = ((j+rank)%nranks)*chunksize;
+        if ((j+rank)%nranks == 0)
           rcount += (sendcount-chunksize*(nranks-1)*nranks/2);
-	size_t sdisp = 0;
-	for (int k=0; k<nranks; k++) {
-	  scount = ((k+j)%nranks)*chunksize;
-	  if ((k+j)%nranks == 0)
-	    scount += (sendcount-chunksize*(nranks-1)*nranks/2);
-	  if (k == rank)
-	    break;
-	  sdisp += scount;
-	}
-	TESTCHECK(InitData(((char*)args->expected[k])+rdisp*wordSize(type), rcount, type, rep+sdisp, j));
-	rdisp += rcount;
+        size_t sdisp = 0;
+        for (int kk=0; kk<nranks; kk++) {
+          scount = ((kk+j)%nranks)*chunksize;
+          if ((kk+j)%nranks == 0)
+            scount += (sendcount-chunksize*(nranks-1)*nranks/2);
+          if (kk == rank)
+            break;
+          sdisp += scount;
+        }
+        TESTCHECK(InitData(((char*)args->expected[k])+rdisp*wordSize(type), rcount, sdisp, type, ncclSum, 33*rep+j, 1, 0));
+        rdisp += rcount;
       }
       k++;
     }
@@ -107,11 +93,16 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   NCCLCHECK(ncclCommCount(comm, &nranks));
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
-  #define MAX_ALLTOALLV_RANKS 256
-  static size_t sendcounts[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], recvcounts[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], sdispls[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS], rdispls[MAX_ALLTOALLV_RANKS*MAX_ALLTOALLV_RANKS];
+
   if (count == 0) return testSuccess;
-  if (nranks > MAX_ALLTOALLV_RANKS) {
-    printf("Number of ranks %d exceeds limit %d\n", nranks, MAX_ALLTOALLV_RANKS);
+
+  size_t *sendcounts, *recvcounts, *sdispls, *rdispls;
+  sendcounts = (size_t *)malloc(nranks*nranks*sizeof(size_t));
+  recvcounts = (size_t *)malloc(nranks*nranks*sizeof(size_t));
+  sdispls = (size_t *)malloc(nranks*nranks*sizeof(size_t));
+  rdispls = (size_t *)malloc(nranks*nranks*sizeof(size_t));
+  if (sendcounts == nullptr || recvcounts == nullptr || sdispls == nullptr || rdispls == nullptr) {
+    printf("failed to allocate buffers for alltoallv\n");
     return testNcclError;
   }
 
@@ -121,10 +112,10 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
       size_t scount = ((i+rank)%nranks)*chunksize;
       if ((i+rank)%nranks == 0)
           scount += (count*nranks-chunksize*(nranks-1)*nranks/2);
-      sendcounts[i+rank*MAX_ALLTOALLV_RANKS] = recvcounts[i+rank*MAX_ALLTOALLV_RANKS] = scount;
-      sdispls[i+rank*MAX_ALLTOALLV_RANKS] = rdispls[i+rank*MAX_ALLTOALLV_RANKS] = disp;
+      sendcounts[i+rank*nranks] = recvcounts[i+rank*nranks] = scount;
+      sdispls[i+rank*nranks] = rdispls[i+rank*nranks] = disp;
       disp += scount;
-      //printf("%d->%d: sendcounts/recvcounts %lx sdispls/rdispls %lx\n", rank, i, sendcounts[i+rank*MAX_ALLTOALLV_RANKS]*wordSize(type), sdispls[i+rank*MAX_ALLTOALLV_RANKS]*wordSize(type));
+      //printf("%d->%d: sendcounts/recvcounts %lx sdispls/rdispls %lx\n", rank, i, sendcounts[i+rank*nranks]*wordSize(type), sdispls[i+rank*nranks]*wordSize(type));
   }
 
 #if NCCL_MAJOR < 2 || NCCL_MINOR < 7
@@ -132,23 +123,23 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   return testNcclError;
 #else
 #if defined(RCCL_ALLTOALLV) && defined(USE_RCCL_GATHER_SCATTER)
-  NCCLCHECK(ncclAllToAllv(sendbuff, sendcounts+rank*MAX_ALLTOALLV_RANKS, sdispls+rank*MAX_ALLTOALLV_RANKS, recvbuff, recvcounts+rank*MAX_ALLTOALLV_RANKS, rdispls+rank*MAX_ALLTOALLV_RANKS, type, comm, stream));
+  NCCLCHECK(ncclAllToAllv(sendbuff, sendcounts+rank*nranks, sdispls+rank*nranks, recvbuff, recvcounts+rank*nranks, rdispls+rank*nranks, type, comm, stream));
 #else
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nranks; r++) {
-    if (sendcounts[r+rank*MAX_ALLTOALLV_RANKS] != 0) {
+    if (sendcounts[r+rank*nranks] != 0) {
       NCCLCHECK(ncclSend(
-          ((char*)sendbuff) + sdispls[r+rank*MAX_ALLTOALLV_RANKS] * wordSize(type),
-          sendcounts[r+rank*MAX_ALLTOALLV_RANKS],
+          ((char*)sendbuff) + sdispls[r+rank*nranks] * wordSize(type),
+          sendcounts[r+rank*nranks],
           type,
           r,
           comm,
           stream));
     }
-    if (recvcounts[r+rank*MAX_ALLTOALLV_RANKS] != 0) {
+    if (recvcounts[r+rank*nranks] != 0) {
       NCCLCHECK(ncclRecv(
-          ((char*)recvbuff) + rdispls[r+rank*MAX_ALLTOALLV_RANKS] * wordSize(type),
-          recvcounts[r+rank*MAX_ALLTOALLV_RANKS],
+          ((char*)recvbuff) + rdispls[r+rank*nranks] * wordSize(type),
+          recvcounts[r+rank*nranks],
           type,
           r,
           comm,
@@ -157,8 +148,12 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   }
   NCCLCHECK(ncclGroupEnd());
 #endif
-  return testSuccess;
 #endif
+  free(sendcounts);
+  free(recvcounts);
+  free(sdispls);
+  free(rdispls);
+  return testSuccess;
 }
 
 struct testColl alltoAllTest = {

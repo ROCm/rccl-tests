@@ -1,13 +1,13 @@
 /*************************************************************************
- * Copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
- * Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include "rccl.h"
+#include "rccl/rccl.h"
 #include <stdio.h>
 #include <cstdint>
 #include <algorithm>
@@ -16,19 +16,38 @@
 #endif
 #include <pthread.h>
 #include "nccl1_compat.h"
+#include "timer.h"
 
-#define HIPCHECK(cmd) do {                         \
-  hipError_t e = cmd;                              \
-  if( e != hipSuccess ) {                          \
+// For nccl.h < 2.13 since we define a weak fallback
+extern "C" char const* ncclGetLastError(ncclComm_t comm);
+
+#define HIPCHECK(cmd) do {                          \
+  hipError_t e = cmd;                               \
+  if( e != hipSuccess ) {                           \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: Test HIP failure %s:%d '%s'\n",    \
+    printf("%s: Test HIP failure %s:%d '%s'\n",     \
          hostname,                                  \
-        __FILE__,__LINE__,hipGetErrorString(e));   \
+        __FILE__,__LINE__,hipGetErrorString(e));    \
     return testCudaError;                           \
   }                                                 \
 } while(0)
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,13,0)
+#define NCCLCHECK(cmd) do {                         \
+  ncclResult_t res = cmd;                           \
+  if (res != ncclSuccess) {                         \
+    char hostname[1024];                            \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Test NCCL failure %s:%d "           \
+           "'%s / %s'\n",                           \
+           hostname,__FILE__,__LINE__,              \
+           ncclGetErrorString(res),                 \
+           ncclGetLastError(NULL));                 \
+    return testNcclError;                           \
+  }                                                 \
+} while(0)
+#else
 #define NCCLCHECK(cmd) do {                         \
   ncclResult_t res = cmd;                           \
   if (res != ncclSuccess) {                         \
@@ -40,13 +59,15 @@
     return testNcclError;                           \
   }                                                 \
 } while(0)
+#endif
 
 typedef enum {
   testSuccess = 0,
   testInternalError = 1,
   testCudaError = 2,
   testNcclError = 3,
-  testCuRandError = 4
+  testTimeout = 4,
+  testNumResults = 5
 } testResult_t;
 
 // Relay errors up and trace
@@ -96,14 +117,17 @@ struct threadArgs {
   size_t stepbytes;
   size_t stepfactor;
 
+  int totalProcs;
   int nProcs;
   int proc;
   int nThreads;
   int thread;
   int nGpus;
+  int* gpus;
   int localRank;
   int localNumDevices;
   int enable_multiranks;
+  int enable_out_of_place;
   int nRanks;
   void** sendbuffs;
   size_t sendBytes;
@@ -116,14 +140,6 @@ struct threadArgs {
 
   void** expected;
   size_t expectedBytes;
-  volatile int* sync;
-  int sync_idx;
-  volatile int* barrier;
-  int barrier_idx;
-  volatile double* reduce;
-  int syncRank;
-  int syncNranks;
-  double* deltaHost;
   int* errors;
   double* bw;
   int* bw_count;
@@ -141,18 +157,12 @@ struct testThread {
   testResult_t ret;
 };
 
-#include <chrono>
-
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
 extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
-extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const int rep, const int nranks);
-extern testResult_t InitData(void* data, const size_t count, ncclDataType_t type, const int rep, const int rank);
+extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks);
+extern testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks, const int rank);
 extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
-
-// Provided by each coll
-extern void print_line_header (size_t size, size_t count, const char *typeName, const char *opName, int root);
-extern void print_header();
 
 #include <unistd.h>
 
@@ -233,7 +243,7 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclInt64:
     case ncclUint64:
     case ncclDouble:
-    //case ncclFloat64: 
+    //case ncclFloat64:
       return 8;
     default: return 0;
   }
@@ -290,6 +300,7 @@ static int ncclstringtomtype (char *str) {
     return ncclCoarse;
 }
 
+extern int is_main_proc;
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
 
