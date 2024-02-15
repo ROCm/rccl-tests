@@ -1152,7 +1152,7 @@ testResult_t run() {
        for (int ii=0; ii<nGpus*nThreads; ii++) {
          HIPCHECK(hipSetDevice(gpus[ii]));
 	 if (!enable_multiranks) {
-	   NCCLCHECK(ncclCommInitRank(comms+ii, ncclProcs*nThreads*nGpus, ncclId, proc*nThreads*nGpus+ii));
+	   NCCLCHECK(ncclCommInitRank(comms+ii, ncclProcs*nThreads*nGpus, ncclId, ncclProc*nThreads*nGpus+ii));
 	 }
 #ifdef RCCL_MULTIRANKPERGPU
 	 else
