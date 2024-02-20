@@ -27,11 +27,17 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
   #if RCCL_BFLOAT16 == 1
     , ncclBfloat16
   #endif
+  #if RCCL_FLOAT8 == 1
+    , ncclFloat8e4m3fnuz, ncclFloat8e5m2fnuz
+  #endif
   };
   const char *test_typenames[ncclNumTypes] = {
     "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"
   #if RCCL_BFLOAT16 == 1
     , "bfloat16"
+  #endif
+  #if RCCL_FLOAT8 == 1
+    , "fp8_e4m3", "fp8_e5m2"
   #endif
   };
   int test_typenum = -1;
@@ -405,6 +411,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         half f16; float f32; double f64;
         #if defined(RCCL_BFLOAT16)
         rccl_bfloat16 bf16;
+        #if defined(RCCL_FLOAT8)
+        rocblas_f8 fp8_e4m3; rocblas_bf8 fp8_e5m2;
         #endif
       };
       switch(type) {
@@ -419,6 +427,10 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
       #if defined(RCCL_BFLOAT16)
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
+      #endif
+      #if defined(RCCL_FLOAT8)
+      case ncclFloat8e4m3fnuz: fp8_e4m3 = ncclVerifiablePremulScalar<rocblas_f8>(rank); break;
+      case ncclFloat8e5m2fnuz: fp8_e5m2 = ncclVerifiablePremulScalar<rocblas_bf8>(rank); break;
       #endif
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
@@ -764,6 +776,10 @@ int main(int argc, char* argv[]) {
       test_opnum++; // ncclAvg
       #if defined(RCCL_BFLOAT16)
         test_typenum++; // bfloat16
+      #endif
+      #if defined(RCCL_FLOAT8)
+        test_typenum++; // fp8_e4m3
+        test_typenum++; // fp8_e5m2
       #endif
     }
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) && test_ncclVersion >= NCCL_VERSION(2,11,0)) {

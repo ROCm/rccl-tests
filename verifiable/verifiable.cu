@@ -1,7 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  * Modifications Copyright (c) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
- *
+ * Modifications Copyright (c) Microsoft Corporation. Licensed under the MIT License.
  * See LICENSE.txt for license information
  ************************************************************************/
 
@@ -14,10 +14,16 @@
 
 #include "rccl/rccl.h"
 
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_BFLOAT16 ==1
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_BFLOAT16 == 1
   #define HAVE_ncclBfloat16 1
 #else
   #define HAVE_ncclBfloat16 0
+#endif
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_FLOAT8 == 1
+  #define HAVE_ncclfp8 1
+#else
+  #define HAVE_ncclfp8 0
 #endif
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
@@ -93,6 +99,12 @@ struct IsIntegral<__half>: std::false_type {};
 template<>
 struct IsIntegral<hip_bfloat16>: std::false_type {};
 #endif
+#if RCCL_FLOAT8 == 1
+template<>
+struct IsIntegral<rocblas_f8>: std::false_type {};
+template<>
+struct IsIntegral<rocblas_bf8>: std::false_type {};
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -130,6 +142,16 @@ namespace {
     return hip_bfloat16(x);
   }
   #endif
+  #if RCCL_FLOAT8 == 1
+  template<>
+  __host__ __device__ rocblas_f8 castTo<rocblas_f8>(float x) {
+    return static_cast<rocblas_f8>(x);
+  }
+  template<>
+  __host__ __device__ rocblas_bf8 castTo<rocblas_bf8>(float x) {
+    return static_cast<rocblas_bf8>(x);
+  }
+  #endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -157,6 +179,22 @@ struct ReduceSum {
       return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
+  #if RCCL_FLOAT8 == 1
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_f8>(__hadd(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) + __half2float(static_cast<__half>(b)));
+    #endif
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_bf8>(__hadd(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) + __half2float(static_cast<__half>(b)));
+    #endif
+  }
+  #endif
   template<typename T>
   __host__ __device__ T postOp(T x) const { return x; }
 };
@@ -171,6 +209,36 @@ struct ReduceProd {
   #if RCCL_BFLOAT16 == 1
   __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return hip_bfloat16(static_cast<float>(a) * static_cast<float>(b));
+  }
+  #endif
+  #if RCCL_FLOAT8 == 1
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_f8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) * __half2float(static_cast<__half>(b)));
+    #endif
+  }
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, float b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_f8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) * b);
+    #endif
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_bf8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) * __half2float(static_cast<__half>(b)));
+    #endif
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, float b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_bf8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) * b);
+    #endif
   }
   #endif
   template<typename T>
@@ -189,6 +257,22 @@ struct ReduceMin {
       return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   #endif
+  #if RCCL_FLOAT8 == 1
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_f8>(__hmin(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return __half2float(static_cast<__half>(a)) < __half2float(static_cast<__half>(b)) ? a : b;
+    #endif
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_bf8>(__hmin(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return __half2float(static_cast<__half>(a)) < __half2float(static_cast<__half>(b)) ? a : b;
+    #endif
+  }
+  #endif
   template<typename T>
   __host__ __device__ T postOp(T x) const { return x; }
 };
@@ -203,6 +287,22 @@ struct ReduceMax {
   #if RCCL_BFLOAT16 == 1
   __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return static_cast<float>(a) > static_cast<float>(b) ? a : b;
+  }
+  #endif
+  #if RCCL_FLOAT8 == 1
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_f8>(__hmax(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return __half2float(static_cast<__half>(a)) > __half2float(static_cast<__half>(b)) ? a : b;
+    #endif
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
+    #if __CUDA_ARCH__ >= 800
+      return static_cast<rocblas_bf8>(__hmax(static_cast<__half>(a), static_cast<__half>(b)));
+    #else
+      return __half2float(static_cast<__half>(a)) > __half2float(static_cast<__half>(b)) ? a : b;
+    #endif
   }
   #endif
   template<typename T>
@@ -282,6 +382,18 @@ struct FloatLayout<__half> {
 template<>
 struct FloatLayout<hip_bfloat16> {
   static constexpr int exponent_bits = 8, mantissa_bits = 7;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+};
+#endif
+#if RCCL_FLOAT8 == 1
+template<>
+struct FloatLayout<rocblas_f8> {
+  static constexpr int exponent_bits = 4, mantissa_bits = 3;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+};
+template<>
+struct FloatLayout<rocblas_bf8> {
+  static constexpr int exponent_bits = 5, mantissa_bits = 2;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
 #endif
@@ -816,6 +928,10 @@ void prepareInput1(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
+  #if HAVE_ncclfp8
+  case ncclFloat8e4m3fnuz: CASE_TY(rocblas_f8)
+  case ncclFloat8e5m2fnuz: CASE_TY(rocblas_bf8)
+  #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
   default: assert(0);
@@ -892,6 +1008,10 @@ void prepareExpected1(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
+  #if HAVE_ncclfp8
+  case ncclFloat8e4m3fnuz: CASE_TY(rocblas_f8)
+  case ncclFloat8e5m2fnuz: CASE_TY(rocblas_bf8)
+  #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
   default: assert(0);
@@ -958,6 +1078,13 @@ __host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
     break;
   #if HAVE_ncclBfloat16
   case ncclBfloat16:
+    power = .91f;
+    coef = .66f;
+    break;
+  #endif
+  #if HAVE_ncclfp8
+  case ncclFloat8e4m3fnuz:
+  case ncclFloat8e5m2fnuz:
     power = .91f;
     coef = .66f;
     break;
@@ -1086,6 +1213,10 @@ void ncclVerifiableVerify(
   #if HAVE_ncclBfloat16
     floating |= elt_ty == ncclBfloat16;
   #endif
+  #if HAVE_ncclfp8
+    floating |= elt_ty == ncclFloat8e4m3fnuz;
+    floating |= elt_ty == ncclFloat8e5m2fnuz;
+  #endif
 
   unsigned tolerance = 0;
   #if HAVE_ncclAvg
@@ -1113,6 +1244,10 @@ void ncclVerifiableVerify(
   case ncclFloat16: CASE_TY(__half, uint16_t)
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
+  #endif
+  #if HAVE_ncclfp8
+  case ncclFloat8e4m3fnuz: CASE_TY(rocblas_f8, uint8_t)
+  case ncclFloat8e5m2fnuz: CASE_TY(rocblas_bf8, uint8_t)
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
@@ -1180,6 +1315,10 @@ __global__ void sweep() {
   sweep1<__half>(ncclFloat16, "half");
   #if HAVE_ncclBfloat16
     sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
+  #endif
+  #if HAVE_ncclfp8
+    sweep1<rocblas_f8>(ncclFloat8e4m3fnuz, "fp8_e4m3");
+    sweep1<rocblas_bf8>(ncclFloat8e5m2fnuz, "fp8_e5m2");
   #endif
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");
