@@ -2,6 +2,7 @@
 /*************************************************************************
  * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (c) Microsoft Corporation. Licensed under the MIT License.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -28,7 +29,7 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
     , ncclBfloat16
   #endif
   #if RCCL_FLOAT8 == 1
-    , ncclFloat8e4m3fnuz, ncclFloat8e5m2fnuz
+    , ncclFp8E4M3, ncclFp8E5M2
   #endif
   };
   const char *test_typenames[ncclNumTypes] = {
@@ -429,8 +430,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
       #endif
       #if defined(RCCL_FLOAT8)
-      case ncclFloat8e4m3fnuz: fp8_e4m3 = ncclVerifiablePremulScalar<rocblas_f8>(rank); break;
-      case ncclFloat8e5m2fnuz: fp8_e5m2 = ncclVerifiablePremulScalar<rocblas_bf8>(rank); break;
+      case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rocblas_f8>(rank); break;
+      case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rocblas_bf8>(rank); break;
       #endif
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
