@@ -13,6 +13,7 @@
 #include <hip/hip_bfloat16.h>
 
 #include "rccl/rccl.h"
+#include "rocblas_float8.h"
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_BFLOAT16 == 1
   #define HAVE_ncclBfloat16 1
@@ -179,22 +180,6 @@ struct ReduceSum {
       return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
-  #if RCCL_FLOAT8 == 1
-  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_f8>(__hadd(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) + __half2float(static_cast<__half>(b)));
-    #endif
-  }
-  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_bf8>(__hadd(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) + __half2float(static_cast<__half>(b)));
-    #endif
-  }
-  #endif
   template<typename T>
   __host__ __device__ T postOp(T x) const { return x; }
 };
@@ -213,32 +198,16 @@ struct ReduceProd {
   #endif
   #if RCCL_FLOAT8 == 1
   __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_f8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) * __half2float(static_cast<__half>(b)));
-    #endif
+      return static_cast<rocblas_f8>(a * b);
   }
   __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, float b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_f8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_f8>(__half2float(static_cast<__half>(a)) * b);
-    #endif
+      return static_cast<rocblas_f8>(a * b);
   }
   __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_bf8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) * __half2float(static_cast<__half>(b)));
-    #endif
+      return static_cast<rocblas_bf8>(a * b);
   }
   __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, float b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_bf8>(__hmul(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return static_cast<rocblas_bf8>(__half2float(static_cast<__half>(a)) * b);
-    #endif
+      return static_cast<rocblas_bf8>(a * b);
   }
   #endif
   template<typename T>
@@ -259,18 +228,10 @@ struct ReduceMin {
   #endif
   #if RCCL_FLOAT8 == 1
   __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_f8>(__hmin(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return __half2float(static_cast<__half>(a)) < __half2float(static_cast<__half>(b)) ? a : b;
-    #endif
+      return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_bf8>(__hmin(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return __half2float(static_cast<__half>(a)) < __half2float(static_cast<__half>(b)) ? a : b;
-    #endif
+      return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   #endif
   template<typename T>
@@ -291,18 +252,10 @@ struct ReduceMax {
   #endif
   #if RCCL_FLOAT8 == 1
   __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_f8>(__hmax(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return __half2float(static_cast<__half>(a)) > __half2float(static_cast<__half>(b)) ? a : b;
-    #endif
+      return static_cast<float>(a) > static_cast<float>(b) ? a : b;
   }
   __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
-    #if __CUDA_ARCH__ >= 800
-      return static_cast<rocblas_bf8>(__hmax(static_cast<__half>(a), static_cast<__half>(b)));
-    #else
-      return __half2float(static_cast<__half>(a)) > __half2float(static_cast<__half>(b)) ? a : b;
-    #endif
+      return static_cast<float>(a) > static_cast<float>(b) ? a : b;
   }
   #endif
   template<typename T>
