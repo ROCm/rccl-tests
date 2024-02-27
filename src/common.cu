@@ -20,6 +20,8 @@
 
 #include "../verifiable/verifiable.h"
 
+#undef RCCL_MULTIRANKPERGPU
+
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 #if NCCL_MAJOR >= 2
@@ -108,13 +110,13 @@ static int enable_out_of_place = 1;
 static double parsesize(const char *value) {
     long long int units;
     double size;
-    char size_lit;
+    char size_lit[2];
 
-    int count = sscanf(value, "%lf %1s", &size, &size_lit);
+    int count = sscanf(value, "%lf %1s", &size, size_lit);
 
     switch (count) {
     case 2:
-      switch (size_lit) {
+      switch (size_lit[0]) {
       case 'G':
       case 'g':
         units = 1024*1024*1024;
@@ -412,6 +414,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         half f16; float f32; double f64;
         #if defined(RCCL_BFLOAT16)
         rccl_bfloat16 bf16;
+        #endif
         #if defined(RCCL_FLOAT8)
         rocblas_f8 fp8_e4m3; rocblas_bf8 fp8_e5m2;
         #endif
@@ -433,6 +436,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rocblas_f8>(rank); break;
       case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rocblas_bf8>(rank); break;
       #endif
+      case ncclNumTypes: break;
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
     }

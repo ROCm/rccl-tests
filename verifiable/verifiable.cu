@@ -13,7 +13,7 @@
 #include <hip/hip_bfloat16.h>
 
 #include "rccl/rccl.h"
-#include "rocblas_float8.h"
+#include "../src/rocblas_float8.h"
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_BFLOAT16 == 1
   #define HAVE_ncclBfloat16 1
