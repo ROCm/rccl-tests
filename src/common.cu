@@ -9,6 +9,7 @@
 
 #include "hip/hip_runtime.h"
 #include "rccl_bfloat16.h"
+#include "rocblas_float8.h"
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
