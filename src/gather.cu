@@ -19,24 +19,17 @@ void GatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramc
 testResult_t GatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
   size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
+  int nranks = args->nProcs*args->nThreads*args->nGpus;
 
-  int k=0;
   for (int i=0; i<args->nGpus; i++) {
     HIPCHECK(hipSetDevice(args->gpus[i]));
-
-    for (int l=0; l<args->nRanks; l++) {
-      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
-      HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
-      void* data = in_place ? ((char*)args->recvbuffs[k])+rank*args->sendBytes : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, rep, 1, 0));
-      HIPCHECK(hipMemcpy(args->expected[k], args->recvbuffs[k], args->expectedBytes, hipMemcpyDefault));
-      if (rank == root) {
-	for (int j=0; j<nranks; j++) {
-	  TESTCHECK(InitData(((char*)args->expected[k]), nranks*sendcount, 0, type, ncclSum, rep, 1, 0));
-	}
-      }
-      k++;
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
+    TESTCHECK(InitData(data, sendcount, rank*sendcount, type, ncclSum, rep, 1, 0));
+    HIPCHECK(hipMemcpy(args->expected[i], args->recvbuffs[i], args->expectedBytes, hipMemcpyDefault));
+    if (rank == root) {
+      TESTCHECK(InitData(args->expected[i], nranks*sendcount, 0, type, ncclSum, rep, 1, 0));
     }
     HIPCHECK(hipDeviceSynchronize());
   }
