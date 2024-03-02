@@ -21,8 +21,6 @@
 
 #include "../verifiable/verifiable.h"
 
-#undef RCCL_MULTIRANKPERGPU
-
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 #if NCCL_MAJOR >= 2
