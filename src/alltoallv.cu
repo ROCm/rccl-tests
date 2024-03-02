@@ -29,49 +29,44 @@ void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
 testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int rep, int in_place) {
   size_t sendcount = args->sendBytes / wordSize(type);
   size_t recvcount = args->expectedBytes / wordSize(type);
-  int nranks = args->nProcs*args->nThreads*args->nGpus*args->nRanks;
+  int nranks = args->nProcs*args->nThreads*args->nGpus;
 
-  int k=0;
   for (int i=0; i<args->nGpus; i++) {
     HIPCHECK(hipSetDevice(args->gpus[i]));
-
-    for (int l=0; l<args->nRanks; l++) {
-      int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus*args->nRanks + i*args->nRanks + l);
-      HIPCHECK(hipMemset(args->recvbuffs[k], 0, args->expectedBytes));
-      void* data = in_place ? args->recvbuffs[k] : args->sendbuffs[k];
-      TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep+rank, 1, 0));
+    int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
+    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
+    TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep+rank, 1, 0));
 
 #if 0
-      int *dataHost = (int *)malloc(args->sendBytes);
-      hipMemcpy(dataHost, data, args->sendBytes, hipMemcpyDeviceToHost);
-      printf(" Rank [%d] Original: ", rank);
-      for(int j=0; j<sendcount; j++) {
-	printf("%d:%d ", j, dataHost[j]);
-      }
-      printf("\n");
-      free(dataHost);
+    int *dataHost = (int *)malloc(args->sendBytes);
+    hipMemcpy(dataHost, data, args->sendBytes, hipMemcpyDeviceToHost);
+    printf(" Rank [%d] Original: ", rank);
+    for(int j=0; j<sendcount; j++) {
+	    printf("%d:%d ", j, dataHost[j]);
+    }
+    printf("\n");
+    free(dataHost);
 #endif
 
-      size_t rdisp = 0;
-      size_t data_count = sendcount*2/nranks;
-      size_t chunksize = data_count/nranks;
-      for (int j=0; j<nranks; j++) {
-        size_t scount = 0, rcount = ((j+rank)%nranks)*chunksize;
-        if ((j+rank)%nranks == 0)
-          rcount += (sendcount-chunksize*(nranks-1)*nranks/2);
-        size_t sdisp = 0;
-        for (int kk=0; kk<nranks; kk++) {
-          scount = ((kk+j)%nranks)*chunksize;
-          if ((kk+j)%nranks == 0)
-            scount += (sendcount-chunksize*(nranks-1)*nranks/2);
-          if (kk == rank)
-            break;
-          sdisp += scount;
-        }
-        TESTCHECK(InitData(((char*)args->expected[k])+rdisp*wordSize(type), rcount, sdisp, type, ncclSum, 33*rep+j, 1, 0));
-        rdisp += rcount;
+    size_t rdisp = 0;
+    size_t data_count = sendcount*2/nranks;
+    size_t chunksize = data_count/nranks;
+    for (int j=0; j<nranks; j++) {
+      size_t scount = 0, rcount = ((j+rank)%nranks)*chunksize;
+      if ((j+rank)%nranks == 0)
+        rcount += (sendcount-chunksize*(nranks-1)*nranks/2);
+      size_t sdisp = 0;
+      for (int k=0; k<nranks; k++) {
+        scount = ((k+j)%nranks)*chunksize;
+        if ((k+j)%nranks == 0)
+          scount += (sendcount-chunksize*(nranks-1)*nranks/2);
+        if (k == rank)
+          break;
+        sdisp += scount;
       }
-      k++;
+      TESTCHECK(InitData(((char*)args->expected[i])+rdisp*wordSize(type), rcount, sdisp, type, ncclSum, 33*rep+j, 1, 0));
+      rdisp += rcount;
     }
     HIPCHECK(hipDeviceSynchronize());
   }
