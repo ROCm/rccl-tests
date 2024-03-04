@@ -180,6 +180,14 @@ struct ReduceSum {
       return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
+  #if RCCL_FLOAT8 == 1
+  __host__ __device__ rocblas_f8 operator()(rocblas_f8 a, rocblas_f8 b) const {
+      return rocblas_f8(static_cast<float>(a) + static_cast<float>(b));
+  }
+  __host__ __device__ rocblas_bf8 operator()(rocblas_bf8 a, rocblas_bf8 b) const {
+      return rocblas_bf8(static_cast<float>(a) + static_cast<float>(b));
+  }
+  #endif
   template<typename T>
   __host__ __device__ T postOp(T x) const { return x; }
 };
