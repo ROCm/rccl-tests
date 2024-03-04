@@ -28,7 +28,7 @@
 
 using std::uint64_t;
 using std::uint32_t;
-using bfloat16 = hip_bfloat16;
+using bfloat16 = __nv_bfloat16;
 
 template<typename T>
 struct float_traits;
@@ -182,14 +182,14 @@ __global__ void kernel() {
 int main() {
   std::printf("type=float:\n");
   kernel<float><<<1,32>>>();
-  hipDeviceSynchronize();
+  cudaDeviceSynchronize();
 
   std::printf("\ntype=half:\n");
   kernel<half><<<1,32>>>();
-  hipDeviceSynchronize();
+  cudaDeviceSynchronize();
 
   std::printf("\ntype=bfloat16:\n");
   kernel<bfloat16><<<1,32>>>();
-  hipDeviceSynchronize();
+  cudaDeviceSynchronize();
   return 0;
 }

@@ -1,6 +1,6 @@
 #
 # Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
-# Modifications are Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
+# Modifications are Copyright (c) 2019-2024 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
 #
@@ -41,6 +41,9 @@ endif
 .PHONY: build clean
 
 BUILDDIR ?= ../build
+HIPIFY_DIR ?= $(BUILDDIR)/hipify
+
+.PRECIOUS: $(HIPIFY_DIR)/%.cu.cpp $(HIPIFY_DIR)/%.h
 
 ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/mpi
@@ -68,11 +71,21 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
 include ../verifiable/verifiable.mk
 
-${DST_DIR}/%.o: %.cu common.h $(TEST_VERIFIABLE_HDRS)
+${HIPIFY_DIR}/%.cu.cpp: %.cu
+	@printf "Hipifying  %-35s > %s\n" $< $@
+	@mkdir -p ${HIPIFY_DIR}
+	hipify-perl -quiet-warnings $< > $@
+
+${HIPIFY_DIR}/%.h: %.h
+	@printf "Hipifying  %-35s > %s\n" $< $@
+	@mkdir -p ${HIPIFY_DIR}
+	hipify-perl -quiet-warnings $< > $@
+
+${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
-	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<
+	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -I. -c $<"
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -I. -c $<
 
 ${DST_DIR}/timer.o: timer.cc timer.h
 	@printf "Compiling  %-35s > %s\n" $< $@

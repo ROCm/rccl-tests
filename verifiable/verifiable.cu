@@ -91,7 +91,7 @@ template<>
 struct IsIntegral<__half>: std::false_type {};
 #if RCCL_BFLOAT16 == 1
 template<>
-struct IsIntegral<hip_bfloat16>: std::false_type {};
+struct IsIntegral<__nv_bfloat16>: std::false_type {};
 #endif
 }
 
@@ -126,7 +126,7 @@ namespace {
   }
   #if RCCL_BFLOAT16 == 1
   template<>
-  __host__ __device__ hip_bfloat16 castTo<hip_bfloat16>(float x) {
+  __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(float x) {
     return hip_bfloat16(x);
   }
   #endif
@@ -153,7 +153,7 @@ struct ReduceSum {
       return __float2half(__half2float(a) + __half2float(b));
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
       return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
@@ -169,7 +169,7 @@ struct ReduceProd {
       return __float2half(__half2float(a) * __half2float(b));
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
       return hip_bfloat16(static_cast<float>(a) * static_cast<float>(b));
   }
   #endif
@@ -185,7 +185,7 @@ struct ReduceMin {
     return __half2float(a) < __half2float(b) ? a : b;
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
       return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   #endif
@@ -201,7 +201,7 @@ struct ReduceMax {
       return __half2float(a) > __half2float(b) ? a : b;
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
+  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
       return static_cast<float>(a) > static_cast<float>(b) ? a : b;
   }
   #endif
@@ -280,7 +280,7 @@ struct FloatLayout<__half> {
 };
 #if RCCL_BFLOAT16 == 1
 template<>
-struct FloatLayout<hip_bfloat16> {
+struct FloatLayout<__nv_bfloat16> {
   static constexpr int exponent_bits = 8, mantissa_bits = 7;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
@@ -801,7 +801,7 @@ __global__ void prepareInput2(
 template<typename ReduceOp>
 void prepareInput1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n, int rank_me,
-    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
+    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
   #define CASE_TY(T) prepareInput2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, rank_me, seed, elt_ix0); break;
@@ -814,7 +814,7 @@ void prepareInput1(
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(hip_bfloat16)
+  case ncclBfloat16: CASE_TY(__nv_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -826,7 +826,7 @@ void prepareInput1(
 
 void ncclVerifiablePrepareInput(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n, int rank_me,
-    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
+    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -877,7 +877,7 @@ __global__ void prepareExpected2(
 template<typename ReduceOp>
 void prepareExpected1(
     void *elts, intptr_t elt_n, int elt_ty, ReduceOp op, int rank_n,
-    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
+    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
   #define CASE_TY(T) prepareExpected2<<<block_n, 512, 0, stream>>>((T*)elts, elt_n, op, rank_n, seed, elt_ix0); break;
@@ -890,7 +890,7 @@ void prepareExpected1(
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(hip_bfloat16)
+  case ncclBfloat16: CASE_TY(__nv_bfloat16)
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -902,7 +902,7 @@ void prepareExpected1(
 
 void ncclVerifiablePrepareExpected(
     void *elts, intptr_t elt_n, int elt_ty, int red_op, int rank_n,
-    uint64_t seed, intptr_t elt_ix0, hipStream_t stream
+    uint64_t seed, intptr_t elt_ix0, cudaStream_t stream
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -1051,7 +1051,7 @@ __global__ void verifyInline2(
 template<typename T, typename Uint>
 void verifyInline1(
     T const *results, intptr_t elt_n, int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
-    unsigned tolerance, int64_t *bad_elt_n, hipStream_t stream, int block_n
+    unsigned tolerance, int64_t *bad_elt_n, cudaStream_t stream, int block_n
   ) {
   #define CASE_OP(op) \
     if(rank_n == 1) \
@@ -1080,7 +1080,7 @@ void verifyInline1(
 void ncclVerifiableVerify(
     void const *results, void const *expected, intptr_t elt_n, int elt_ty,
     int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
-    int64_t *bad_elt_n, hipStream_t stream
+    int64_t *bad_elt_n, cudaStream_t stream
   ) {
   bool floating = elt_ty == ncclFloat16 || elt_ty == ncclFloat32 || elt_ty == ncclFloat64;
   #if HAVE_ncclBfloat16
@@ -1112,7 +1112,7 @@ void ncclVerifiableVerify(
   case ncclUint64: CASE_TY(uint64_t, uint64_t)
   case ncclFloat16: CASE_TY(__half, uint16_t)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
+  case ncclBfloat16: CASE_TY(__nv_bfloat16, uint16_t)
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
@@ -1179,7 +1179,7 @@ __global__ void sweep() {
   sweep1<uint64_t>(ncclUint64, "uint64");
   sweep1<__half>(ncclFloat16, "half");
   #if HAVE_ncclBfloat16
-    sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
+    sweep1<__nv_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");
@@ -1187,9 +1187,9 @@ __global__ void sweep() {
 
 int main(int arg_n, char **args) {
   std::cerr<<"You are hoping to see no output beyond this line."<<std::endl;
-  hipSetDevice(0);
+  cudaSetDevice(0);
   sweep<<<1,512>>>();
-  hipDeviceSynchronize();
+  cudaDeviceSynchronize();
   return 0;
 }
 #endif
