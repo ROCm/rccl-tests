@@ -5,7 +5,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "hip/hip_runtime.h"
+#include "cuda_runtime.h"
 #include "common.h"
 
 #define ALIGN 4

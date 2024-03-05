@@ -8,8 +8,8 @@
 //#pragma nv_diag_suppress declared_but_not_referenced
 
 #include "verifiable.h"
-#include <hip/hip_runtime.h>
-#include <hip/hip_fp16.h>
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
 #include <hip/hip_bfloat16.h>
 
 #include "rccl/rccl.h"

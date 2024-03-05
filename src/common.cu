@@ -6,7 +6,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "hip/hip_runtime.h"
+#include "cuda_runtime.h"
 #include "rccl_bfloat16.h"
 #include "common.h"
 #include <pthread.h>
@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <getopt.h>
 #include <libgen.h>
+#include "cuda.h"
 
 //#define DEBUG_PRINT
 

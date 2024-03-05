@@ -24,7 +24,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <hip/hip_bfloat16.h>
-#include <hip/hip_fp16.h>
+#include <cuda_fp16.h>
 
 using std::uint64_t;
 using std::uint32_t;
