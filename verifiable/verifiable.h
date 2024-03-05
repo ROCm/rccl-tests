@@ -8,7 +8,7 @@
 #ifndef _d41d8cd98f00b204e9800998ecf8427e
 #define _d41d8cd98f00b204e9800998ecf8427e
 
-#include "cuda_runtime.h"
+#include <cuda_runtime.h>
 
 #include <stdint.h>
 
