@@ -1,5 +1,5 @@
 # Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
-# Modifications Copyright (c) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
+# Modifications Copyright (c) 2020-2024 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
 
@@ -8,11 +8,21 @@
 # TEST_VERIFIABLE_SRCDIR = <points to this directory>
 # TEST_VERIFIABLE_BUILDDIR = <points to destination of .o file>
 
-TEST_VERIFIABLE_HDRS = $(TEST_VERIFIABLE_SRCDIR)/verifiable.h
-TEST_VERIFIABLE_OBJS = $(TEST_VERIFIABLE_BUILDDIR)/verifiable.o
+TEST_VERIFIABLE_HDRS      = $(TEST_VERIFIABLE_SRCDIR)/verifiable.h
+TEST_VERIFIABLE_OBJS      = $(TEST_VERIFIABLE_BUILDDIR)/verifiable.o
 
-$(TEST_VERIFIABLE_BUILDDIR)/verifiable.o: $(TEST_VERIFIABLE_SRCDIR)/verifiable.cu $(TEST_VERIFY_REDUCE_HDRS)
+${HIPIFY_DIR}/verifiable.cu.cpp: $(TEST_VERIFIABLE_SRCDIR)/verifiable.cu
+	@printf "Hipifying  %-35s > %s\n" $< $@
+	@mkdir -p ${HIPIFY_DIR}
+	hipify-perl -quiet-warnings $< > $@
+
+${HIPIFY_DIR}/verifiable.h: $(TEST_VERIFIABLE_SRCDIR)/verifiable.h
+	@printf "Hipifying  %-35s > %s\n" $< $@
+	@mkdir -p ${HIPIFY_DIR}
+	hipify-perl -quiet-warnings $< > $@
+
+$(TEST_VERIFIABLE_BUILDDIR)/verifiable.o: $(HIPIFY_DIR)/verifiable.cu.cpp $(HIPIFY_DIR)/verifiable.h
 	@printf "Compiling %s\n" $@
 	@mkdir -p $(TEST_VERIFIABLE_BUILDDIR)
-	echo " $(HIPCC) -o $@ $(HIPCUFLAGS) -c $(TEST_VERIFIABLE_SRCDIR)/verifiable.cu"
-	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $(TEST_VERIFIABLE_SRCDIR)/verifiable.cu
+	echo " $(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -c $<

@@ -21,14 +21,14 @@
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
 
-#define HIPCHECK(cmd) do {                          \
-  hipError_t e = cmd;                               \
-  if( e != hipSuccess ) {                           \
+#define CUDACHECK(cmd) do {                         \
+  cudaError_t err = cmd;                            \
+  if( err != cudaSuccess ) {                        \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
-    printf("%s: Test HIP failure %s:%d '%s'\n",     \
+    printf("%s: Test CUDA failure %s:%d '%s'\n",    \
          hostname,                                  \
-        __FILE__,__LINE__,hipGetErrorString(e));    \
+        __FILE__,__LINE__,cudaGetErrorString(err)); \
     return testCudaError;                           \
   }                                                 \
 } while(0)
@@ -93,7 +93,7 @@ struct testColl {
       ncclRedOp_t op, int root, int rep, int in_place);
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
   testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
-      ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream);
+      ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
 };
 extern struct testColl allReduceTest;
 extern struct testColl allGatherTest;
@@ -133,7 +133,7 @@ struct threadArgs {
   size_t recvInplaceOffset;
   ncclUniqueId ncclId;
   ncclComm_t* comms;
-  hipStream_t* streams;
+  cudaStream_t* streams;
 
   void** expected;
   size_t expectedBytes;

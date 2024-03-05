@@ -5,7 +5,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include <hip/hip_runtime.h>
+#include "cuda_runtime.h"
 #include "common.h"
 
 #define USE_RCCL_GATHER_SCATTER
@@ -32,15 +32,15 @@ testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncc
   int nranks = args->nProcs*args->nThreads*args->nGpus;
 
   for (int i=0; i<args->nGpus; i++) {
-    HIPCHECK(hipSetDevice(args->gpus[i]));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? args->recvbuffs[i] : args->sendbuffs[i];
     TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep+rank, 1, 0));
 
 #if 0
     int *dataHost = (int *)malloc(args->sendBytes);
-    hipMemcpy(dataHost, data, args->sendBytes, hipMemcpyDeviceToHost);
+    cudaMemcpy(dataHost, data, args->sendBytes, cudaMemcpyDeviceToHost);
     printf(" Rank [%d] Original: ", rank);
     for(int j=0; j<sendcount; j++) {
 	    printf("%d:%d ", j, dataHost[j]);
@@ -68,7 +68,7 @@ testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncc
       TESTCHECK(InitData(((char*)args->expected[i])+rdisp*wordSize(type), rcount, sdisp, type, ncclSum, 33*rep+j, 1, 0));
       rdisp += rcount;
     }
-    HIPCHECK(hipDeviceSynchronize());
+    CUDACHECK(cudaDeviceSynchronize());
   }
   // We don't support in-place alltoall
   args->reportErrors = in_place ? 0 : 1;
@@ -83,7 +83,7 @@ void AlltoAllvGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
+testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   int nranks;
   NCCLCHECK(ncclCommCount(comm, &nranks));
   int rank;
