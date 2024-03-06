@@ -5,7 +5,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include "hip/hip_runtime.h"
+#include "cuda_runtime.h"
 #include "common.h"
 
 #define ALIGN 4
@@ -25,15 +25,15 @@ testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncc
   int nranks = args->nProcs*args->nThreads*args->nGpus;
 
   for (int i=0; i<args->nGpus; i++) {
-    HIPCHECK(hipSetDevice(args->gpus[i]));
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
-    HIPCHECK(hipMemset(args->recvbuffs[i], 0, args->expectedBytes));
+    CUDACHECK(cudaMemset(args->recvbuffs[i], 0, args->expectedBytes));
     void* data = in_place ? ((char*)args->recvbuffs[i])+rank*args->sendBytes : args->sendbuffs[i];
     TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33*rep + rank, 1, 0));
     for (int j=0; j<nranks; j++) {
       TESTCHECK(InitData((char*)args->expected[i] + args->sendBytes*j, sendcount, 0, type, ncclSum, 33*rep + j, 1, 0));
     }
-    HIPCHECK(hipDeviceSynchronize());
+    CUDACHECK(cudaDeviceSynchronize());
   }
   return testSuccess;
 }
@@ -46,7 +46,7 @@ void HyperCubeGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, hipStream_t stream) {
+testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
   char* sbuff = (char*)sendbuff;
   char* rbuff = (char*)recvbuff;
   int nRanks;
@@ -54,7 +54,7 @@ testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   int rank;
   NCCLCHECK(ncclCommUserRank(comm, &rank));
   size_t rankSize = count * wordSize(type);
-  if (rbuff+rank*rankSize != sbuff) HIPCHECK(hipMemcpyAsync(rbuff+rank*rankSize, sbuff, rankSize, hipMemcpyDeviceToDevice, stream));
+  if (rbuff+rank*rankSize != sbuff) CUDACHECK(cudaMemcpyAsync(rbuff+rank*rankSize, sbuff, rankSize, cudaMemcpyDeviceToDevice, stream));
 
   // Hypercube AllGather
   for (int mask=1; mask<nRanks; mask<<=1) {
