@@ -28,7 +28,7 @@
 
 using std::uint64_t;
 using std::uint32_t;
-using bfloat16 = __nv_bfloat16;
+using bfloat16 = hip_bfloat16;
 
 template<typename T>
 struct float_traits;
