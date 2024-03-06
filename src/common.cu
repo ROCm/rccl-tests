@@ -8,8 +8,8 @@
  ************************************************************************/
 
 #include "hip/hip_runtime.h"
+#include "rccl_bfloat8.h"
 #include "rccl_bfloat16.h"
-#include "rocblas_float8.h"
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
@@ -409,7 +409,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         rccl_bfloat16 bf16;
         #endif
         #if defined(RCCL_FLOAT8)
-        rocblas_f8 fp8_e4m3; rocblas_bf8 fp8_e5m2;
+        rccl_float8 fp8_e4m3; rccl_bfloat8 fp8_e5m2;
         #endif
       };
       switch(type) {
@@ -426,8 +426,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
       #endif
       #if defined(RCCL_FLOAT8)
-      case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rocblas_f8>(rank); break;
-      case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rocblas_bf8>(rank); break;
+      case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;
+      case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rccl_bfloat8>(rank); break;
       #endif
       case ncclNumTypes: break;
       }
