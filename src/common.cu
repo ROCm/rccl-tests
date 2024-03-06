@@ -102,7 +102,7 @@ static double parsesize(const char *value) {
     double size;
     char size_lit;
 
-    int count = sscanf(value, "%lf %1s", &size, &size_lit);
+    int count = sscanf(value, "%lf %c", &size, &size_lit);
 
     switch (count) {
     case 2:
