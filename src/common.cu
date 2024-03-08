@@ -8,7 +8,7 @@
  ************************************************************************/
 
 #include "cuda_runtime.h"
-#include "rccl_bfloat8.h"
+#include "rccl_float8.h"
 #include "rccl_bfloat16.h"
 #include "common.h"
 #include <pthread.h>
