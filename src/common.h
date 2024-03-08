@@ -1,6 +1,7 @@
 /*************************************************************************
  * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (c) Microsoft Corporation. Licensed under the MIT License.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
@@ -221,6 +222,10 @@ static size_t wordSize(ncclDataType_t type) {
 #if NCCL_MAJOR >= 2
     //case ncclInt8:
     case ncclUint8:
+#if NCCL_MAJOR >= 2 && RCCL_FLOAT8 == 1
+    case ncclFp8E4M3:
+    case ncclFp8E5M2:
+#endif
 #endif
       return 1;
     case ncclHalf:

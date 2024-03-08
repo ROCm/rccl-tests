@@ -2,11 +2,13 @@
 /*************************************************************************
  * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
  * Modifications Copyright (c) 2019-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (c) Microsoft Corporation. Licensed under the MIT License.
  *
  * See LICENSE.txt for license information
  ************************************************************************/
 
 #include "cuda_runtime.h"
+#include "rccl_bfloat8.h"
 #include "rccl_bfloat16.h"
 #include "common.h"
 #include <pthread.h>
@@ -28,11 +30,17 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
   #if RCCL_BFLOAT16 == 1
     , ncclBfloat16
   #endif
+  #if RCCL_FLOAT8 == 1
+    , ncclFp8E4M3, ncclFp8E5M2
+  #endif
   };
   const char *test_typenames[ncclNumTypes] = {
     "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"
   #if RCCL_BFLOAT16 == 1
     , "bfloat16"
+  #endif
+  #if RCCL_FLOAT8 == 1
+    , "fp8_e4m3", "fp8_e5m2"
   #endif
   };
   int test_typenum = -1;
@@ -100,13 +108,13 @@ static int enable_out_of_place = 1;
 static double parsesize(const char *value) {
     long long int units;
     double size;
-    char size_lit;
+    char size_lit[2];
 
-    int count = sscanf(value, "%lf %1s", &size, &size_lit);
+    int count = sscanf(value, "%lf %1s", &size, size_lit);
 
     switch (count) {
     case 2:
-      switch (size_lit) {
+      switch (size_lit[0]) {
       case 'G':
       case 'g':
         units = 1024*1024*1024;
@@ -401,6 +409,9 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         #if defined(RCCL_BFLOAT16)
         rccl_bfloat16 bf16;
         #endif
+        #if defined(RCCL_FLOAT8)
+        rccl_float8 fp8_e4m3; rccl_bfloat8 fp8_e5m2;
+        #endif
       };
       switch(type) {
       case ncclInt8: i8 = ncclVerifiablePremulScalar<int8_t>(rank); break;
@@ -415,6 +426,11 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       #if defined(RCCL_BFLOAT16)
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
       #endif
+      #if defined(RCCL_FLOAT8)
+      case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;
+      case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rccl_bfloat8>(rank); break;
+      #endif
+      case ncclNumTypes: break;
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
     }
@@ -752,6 +768,10 @@ int main(int argc, char* argv[]) {
       test_opnum++; // ncclAvg
       #if defined(RCCL_BFLOAT16)
         test_typenum++; // bfloat16
+      #endif
+      #if defined(RCCL_FLOAT8)
+        test_typenum++; // fp8_e4m3
+        test_typenum++; // fp8_e5m2
       #endif
     }
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) && test_ncclVersion >= NCCL_VERSION(2,11,0)) {
