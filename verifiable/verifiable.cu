@@ -98,7 +98,7 @@ template<>
 struct IsIntegral<__half>: std::false_type {};
 #if RCCL_BFLOAT16 == 1
 template<>
-struct IsIntegral<__nv_bfloat16>: std::false_type {};
+struct IsIntegral<hip_bfloat16>: std::false_type {};
 #endif
 #if RCCL_FLOAT8 == 1
 template<>
@@ -139,7 +139,7 @@ namespace {
   }
   #if RCCL_BFLOAT16 == 1
   template<>
-  __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(float x) {
+  __host__ __device__ hip_bfloat16 castTo<hip_bfloat16>(float x) {
     return hip_bfloat16(x);
   }
   #endif
@@ -176,7 +176,7 @@ struct ReduceSum {
       return __float2half(__half2float(a) + __half2float(b));
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return hip_bfloat16(static_cast<float>(a) + static_cast<float>(b));
   }
   #endif
@@ -200,7 +200,7 @@ struct ReduceProd {
       return __float2half(__half2float(a) * __half2float(b));
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return hip_bfloat16(static_cast<float>(a) * static_cast<float>(b));
   }
   #endif
@@ -230,7 +230,7 @@ struct ReduceMin {
     return __half2float(a) < __half2float(b) ? a : b;
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return static_cast<float>(a) < static_cast<float>(b) ? a : b;
   }
   #endif
@@ -254,7 +254,7 @@ struct ReduceMax {
       return __half2float(a) > __half2float(b) ? a : b;
   }
   #if RCCL_BFLOAT16 == 1
-  __host__ __device__ __nv_bfloat16 operator()(__nv_bfloat16 a, __nv_bfloat16 b) const {
+  __host__ __device__ hip_bfloat16 operator()(hip_bfloat16 a, hip_bfloat16 b) const {
       return static_cast<float>(a) > static_cast<float>(b) ? a : b;
   }
   #endif
@@ -341,7 +341,7 @@ struct FloatLayout<__half> {
 };
 #if RCCL_BFLOAT16 == 1
 template<>
-struct FloatLayout<__nv_bfloat16> {
+struct FloatLayout<hip_bfloat16> {
   static constexpr int exponent_bits = 8, mantissa_bits = 7;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
@@ -887,7 +887,7 @@ void prepareInput1(
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   #if HAVE_ncclfp8
   case ncclFp8E4M3: CASE_TY(rccl_float8)
@@ -967,7 +967,7 @@ void prepareExpected1(
   case ncclUint64: CASE_TY(uint64_t)
   case ncclFloat16: CASE_TY(__half)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16)
+  case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   #if HAVE_ncclfp8
   case ncclFp8E4M3: CASE_TY(rccl_float8)
@@ -1204,7 +1204,7 @@ void ncclVerifiableVerify(
   case ncclUint64: CASE_TY(uint64_t, uint64_t)
   case ncclFloat16: CASE_TY(__half, uint16_t)
   #if HAVE_ncclBfloat16
-  case ncclBfloat16: CASE_TY(__nv_bfloat16, uint16_t)
+  case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
   #endif
   #if HAVE_ncclfp8
   case ncclFp8E4M3: CASE_TY(rccl_float8, uint8_t)
@@ -1275,7 +1275,7 @@ __global__ void sweep() {
   sweep1<uint64_t>(ncclUint64, "uint64");
   sweep1<__half>(ncclFloat16, "half");
   #if HAVE_ncclBfloat16
-    sweep1<__nv_bfloat16>(ncclBfloat16, "bfloat16");
+    sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
   #if HAVE_ncclfp8
     sweep1<rccl_float8>(ncclFp8E4M3, "fp8_e4m3");
