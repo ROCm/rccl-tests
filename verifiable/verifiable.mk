@@ -21,12 +21,12 @@ ${HIPIFY_DIR}/verifiable.h: $(TEST_VERIFIABLE_SRCDIR)/verifiable.h
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
 
-${HIPIFY_DIR}/rccl_bfloat8.h: $(TEST_VERIFIABLE_SRCDIR)/../src/rccl_bfloat8.h
+${HIPIFY_DIR}/rccl_float8.h: $(TEST_VERIFIABLE_SRCDIR)/../src/rccl_float8.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
 
-$(TEST_VERIFIABLE_BUILDDIR)/verifiable.o: $(HIPIFY_DIR)/verifiable.cu.cpp $(HIPIFY_DIR)/verifiable.h $(HIPIFY_DIR)/rccl_bfloat8.h
+$(TEST_VERIFIABLE_BUILDDIR)/verifiable.o: $(HIPIFY_DIR)/verifiable.cu.cpp $(HIPIFY_DIR)/verifiable.h $(HIPIFY_DIR)/rccl_float8.h
 	@printf "Compiling %s\n" $@
 	@mkdir -p $(TEST_VERIFIABLE_BUILDDIR)
 	echo " $(HIPCC) -o $@ $(HIPCUFLAGS) -c $<"
