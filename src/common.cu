@@ -21,6 +21,7 @@
 //#define DEBUG_PRINT
 
 #include "verifiable.h"
+#include "git_version.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
@@ -749,6 +750,16 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
   return testSuccess;
 }
 
+#define VERSION_STRING "rccl-tests: Version "
+void showVersion() {
+  static int shown = 0;
+  if (shown == 0) {
+    printf("%s %s\n", VERSION_STRING, rcclTestsGitHash);
+    fflush(stdout);
+    shown = 1;
+  }
+}
+
 testResult_t run(); // Main function
 
 int main(int argc, char* argv[]) {
@@ -778,6 +789,7 @@ int main(int argc, char* argv[]) {
       test_opnum++; // PreMulSum
     }
   #endif
+  showVersion();
 
   // Parse args
   double parsed;
