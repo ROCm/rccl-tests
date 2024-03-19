@@ -750,21 +750,12 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
   return testSuccess;
 }
 
-#define VERSION_STRING "rccl-tests: Version "
-void showVersion() {
-  static int shown = 0;
-  if (shown == 0) {
-    printf("%s %s\n", VERSION_STRING, rcclTestsGitHash);
-    fflush(stdout);
-    shown = 1;
-  }
-}
-
 testResult_t run(); // Main function
 
 int main(int argc, char* argv[]) {
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
+  printf("rccl-tests: Version %s\n", rcclTestsGitHash);
 
   #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
     ncclGetVersion(&test_ncclVersion);
@@ -789,7 +780,6 @@ int main(int argc, char* argv[]) {
       test_opnum++; // PreMulSum
     }
   #endif
-  showVersion();
 
   // Parse args
   double parsed;
