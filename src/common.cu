@@ -755,7 +755,6 @@ testResult_t run(); // Main function
 int main(int argc, char* argv[]) {
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
-  printf("rccl-tests: Version %s\n", rcclTestsGitHash);
 
   #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
     ncclGetVersion(&test_ncclVersion);
@@ -1021,6 +1020,7 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
+  PRINT("rccl-tests: Version %s\n", rcclTestsGitHash);
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
