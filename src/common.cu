@@ -21,6 +21,7 @@
 //#define DEBUG_PRINT
 
 #include "verifiable.h"
+#include "git_version.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
@@ -754,6 +755,7 @@ testResult_t run(); // Main function
 int main(int argc, char* argv[]) {
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
+  printf("rccl-tests: Version %s\n", rcclTestsGitHash);
 
   #if NCCL_VERSION_CODE >= NCCL_VERSION(2,4,0)
     ncclGetVersion(&test_ncclVersion);
