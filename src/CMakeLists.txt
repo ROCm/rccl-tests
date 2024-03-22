@@ -68,7 +68,6 @@ endfunction()
 # Collect list of common source files
 #==================================================================================================
 set(COMMON_FILES
-  git_version.h
   common.h
   common.cu
   nccl1_compat.h
@@ -113,20 +112,8 @@ endforeach()
 # Compile common object library
 #==================================================================================================
 add_custom_target(hipify DEPENDS ${HIP_COMMON_SOURCES})
-
-# Create an initial git_version.cpp file (that will be updated with latest git version)
-#==================================================================================================
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/git_version.cpp "")
-list(APPEND HIP_COMMON_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/git_version.cpp)
-
-#Create a custom target that updates git_version.cpp and executes whenever rccl is built
-add_custom_target(git_version_check
-  COMMENT "Updating git_version.cpp if necessary"
-  COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_version.cmake
-  VERBATIM
-)
 add_library(rccl_common OBJECT ${HIP_COMMON_SOURCES})
-add_dependencies(rccl_common hipify git_version_check)
+add_dependencies(rccl_common hipify)
 target_link_libraries(rccl_common roc::rccl hip::device)
 if(USE_MPI)
     target_link_libraries(rccl_common MPI::MPI_CXX)
