@@ -56,7 +56,7 @@ endif
 LIBRARIES += rccl
 HIPLDFLAGS   += $(LIBRARIES:%=-l%)
 
-all: $(DST_DIR)/verifiable.o $(DST_DIR)/self_test 
+all: $(DST_DIR)/verifiable.o $(DST_DIR)/self_test
 
 clean:
 	rm -rf $(DST_DIR)

@@ -21,6 +21,7 @@
 //#define DEBUG_PRINT
 
 #include "verifiable.h"
+#include "git_version.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
@@ -1026,7 +1027,7 @@ testResult_t run() {
   if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
   PRINT("#\n");
-
+  PRINT("rccl-tests: Version %s\n", rcclTestsGitHash);
   PRINT("# Using devices\n");
 #define MAX_LINE 2048
   char line[MAX_LINE];

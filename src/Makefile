@@ -62,6 +62,11 @@ OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
+GIT_VERSION_FILE := ${DST_DIR}/src/git_version.cpp
+GIT_REV          := $(shell git log --pretty=format:'%h' -n 1)
+GIT_DIFF         := $(shell git diff --quiet --exit-code || echo +)
+GIT_BRANCH       := $(shell git rev-parse --abbrev-ref HEAD)
+
 build: ${BIN_FILES}
 
 clean:
@@ -70,6 +75,11 @@ clean:
 TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/verifiable
 include ../verifiable/verifiable.mk
+
+# Rule to create git_version.cpp
+$(GIT_VERSION_FILE):
+	@mkdir -p ${DST_DIR}/src
+	@echo 'const char* rcclTestsGitHash = "$(GIT_BRANCH):$(GIT_REV)$(GIT_DIFF)";' > $@
 
 ${HIPIFY_DIR}/%.cu.cpp: %.cu
 	@printf "Hipifying  %-35s > %s\n" $< $@
@@ -81,7 +91,7 @@ ${HIPIFY_DIR}/%.h: %.h
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
 
-${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS)
+${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS) $(GIT_VERSION_FILE)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) -I. -c $<"
@@ -92,7 +102,7 @@ ${DST_DIR}/timer.o: timer.cc timer.h
 	@mkdir -p ${DST_DIR}
 	$(CXX) $(CXXFLAGS) -o $@ -c timer.cc
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS)
+${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS) $(DST_DIR)/src/git_version.cpp
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $(HIPCUFLAGS) $^ ${HIPLDFLAGS}"
