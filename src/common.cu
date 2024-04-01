@@ -9,7 +9,7 @@
 
 #include "cuda_runtime.h"
 #include "rccl_float8.h"
-#include "rccl_bfloat16.h"
+#include <hip/hip_bfloat16.h>
 #include "common.h"
 #include <pthread.h>
 #include <cstdio>
@@ -408,7 +408,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         int8_t i8; uint8_t u8; int32_t i32; uint32_t u32; int64_t i64; uint64_t u64;
         half f16; float f32; double f64;
         #if defined(RCCL_BFLOAT16)
-        rccl_bfloat16 bf16;
+        hip_bfloat16 bf16;
         #endif
         #if defined(RCCL_FLOAT8)
         rccl_float8 fp8_e4m3; rccl_bfloat8 fp8_e5m2;
@@ -425,7 +425,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFloat32: f32 = ncclVerifiablePremulScalar<float>(rank); break;
       case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
       #if defined(RCCL_BFLOAT16)
-      case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<rccl_bfloat16>(rank); break;
+      case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<hip_bfloat16>(rank); break;
       #endif
       #if defined(RCCL_FLOAT8)
       case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;

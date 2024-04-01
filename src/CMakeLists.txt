@@ -73,7 +73,6 @@ set(COMMON_FILES
   common.cu
   nccl1_compat.h
   rccl_float8.h
-  rccl_bfloat16.h
   timer.h
   timer.cc
   ../verifiable/verifiable.h
