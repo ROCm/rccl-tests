@@ -51,6 +51,12 @@ Run with MPI on 10 processes (potentially on multiple nodes) with 4 GPUs each, f
 $ mpirun -np 10 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 4
 ```
 
+For performance-oriented runs, on both single-node and multi-node, we suggest using 1 MPI process per GPU and `-g 1`. So, a run on 8 GPUs looks like :
+```shell
+$ mpirun -np 8 --bind-to numa ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 1
+```
+Running with 1 MPI process per GPU ensures a 1:1 mapping for CPUs and GPUs, which can be beneficial for smaller message sizes and better represents the real-world use of RCCL in Deep Learning frameworks like Pytorch and TensorFlow.
+
 ### Performance
 
 See the [Performance](doc/PERFORMANCE.md) page for explanation about numbers, and in particular the "busbw" column.
