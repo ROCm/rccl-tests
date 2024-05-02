@@ -647,17 +647,105 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
 
   // Warm-up for large size
   setupArgs(args->maxbytes, type, args);
+#if HIP_VERSION >= 50221310
+  cudaGraph_t graphs[args->nGpus];
+  cudaGraphExec_t graphExec[args->nGpus];
+  if (cudaGraphLaunches >= 1) {
+    // Begin cuda graph capture
+    for (int i=0; i<args->nGpus; i++) {
+      // Thread local mode is needed for:
+      // - Multi-thread mode: where graph capture and instantiation can happen concurrently across threads
+      // - P2P pre-connect: when there is no warm-up, P2P pre-connect is done during graph capture.
+      //   Since pre-connect calls cudaMalloc, we cannot use global capture mode
+      CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
+    }
+  }
+#endif
   for (int iter = 0; iter < warmup_iters; iter++) {
     TESTCHECK(startColl(args, type, op, root, 0, iter));
   }
+
+#if HIP_VERSION >= 50221310
+  if (cudaGraphLaunches >= 1) {
+    // End cuda graph capture
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaStreamEndCapture(args->streams[i], graphs+i));
+    }
+    // Instantiate cuda graph
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphInstantiate(graphExec+i, graphs[i], NULL, NULL, 0));
+    }
+    // Resync CPU, restart timing, launch cuda graph
+    Barrier(args);
+    for (int l=0; l<cudaGraphLaunches; l++) {
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
+      }
+    }
+  }
+#endif
+
   TESTCHECK(completeColl(args));
+
+#if HIP_VERSION >= 50221310
+  if (cudaGraphLaunches >= 1) {
+    //destroy cuda graph
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphExecDestroy(graphExec[i]));
+      CUDACHECK(cudaGraphDestroy(graphs[i]));
+    }
+  }
+#endif
 
   // Warm-up for small size
   setupArgs(args->minbytes, type, args);
+#if HIP_VERSION >= 50221310
+  if (cudaGraphLaunches >= 1) {
+    // Begin cuda graph capture
+    for (int i=0; i<args->nGpus; i++) {
+      // Thread local mode is needed for:
+      // - Multi-thread mode: where graph capture and instantiation can happen concurrently across threads
+      // - P2P pre-connect: when there is no warm-up, P2P pre-connect is done during graph capture.
+      //   Since pre-connect calls cudaMalloc, we cannot use global capture mode
+      CUDACHECK(cudaStreamBeginCapture(args->streams[i], cudaStreamCaptureModeThreadLocal));
+    }
+  }
+#endif
   for (int iter = 0; iter < warmup_iters; iter++) {
     TESTCHECK(startColl(args, type, op, root, iter < warmup_iters/2 ? 0 : 1, iter));
   }
+
+#if HIP_VERSION >= 50221310
+  if (cudaGraphLaunches >= 1) {
+    // End cuda graph capture
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaStreamEndCapture(args->streams[i], graphs+i));
+    }
+    // Instantiate cuda graph
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphInstantiate(graphExec+i, graphs[i], NULL, NULL, 0));
+    }
+    // Resync CPU, restart timing, launch cuda graph
+    Barrier(args);
+    for (int l=0; l<cudaGraphLaunches; l++) {
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
+      }
+    }
+  }
+#endif
+
   TESTCHECK(completeColl(args));
+
+#if HIP_VERSION >= 50221310
+  if (cudaGraphLaunches >= 1) {
+    //destroy cuda graph
+    for (int i=0; i<args->nGpus; i++) {
+      CUDACHECK(cudaGraphExecDestroy(graphExec[i]));
+      CUDACHECK(cudaGraphDestroy(graphs[i]));
+    }
+  }
+#endif
 
   for (size_t iter = 0; iter < stress_cycles; iter++) {
     if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
