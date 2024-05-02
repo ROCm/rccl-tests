@@ -1100,7 +1100,7 @@ testResult_t run() {
   for (int p=0; p<totalProcs; p++) {
     if (hostHashs[p] == hostHashs[proc]) localSize++;
   }
-  if (nGpus * localSize > numDevices)
+  if (nGpus * localSize > numDevices && numDevices != 1)
   {
       fprintf(stderr, "[ERROR] The number of requested GPUs (%d) is greater than the number of GPUs available (%d) on node (%s)\n", nGpus*localSize, numDevices, hostname);
       return testNcclError;
@@ -1124,7 +1124,7 @@ testResult_t run() {
   char* envstr = getenv("NCCL_TESTS_DEVICE");
   int gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nThreads*nGpus; i++) {
-    int cudaDev = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
+    int cudaDev = ((gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i)%numDevices;
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
@@ -1176,7 +1176,7 @@ testResult_t run() {
   envstr = getenv("NCCL_TESTS_DEVICE");
   gpu0 = envstr ? atoi(envstr) : -1;
   for (int i=0; i<nGpus*nThreads; i++) {
-    gpus[i] = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
+    gpus[i] = ((gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i)%numDevices;
     CUDACHECK(cudaSetDevice(gpus[i]));
     TESTCHECK(AllocateBuffs(sendbuffs+i, sendBytes, recvbuffs+i, recvBytes, expected+i, (size_t)maxBytes));
     if (streamnull)
