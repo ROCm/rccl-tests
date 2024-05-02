@@ -653,7 +653,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   if (cudaGraphLaunches >= 1) {
     // Begin cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
-      // Thread local mdoe is needed for:
+      // Thread local mode is needed for:
       // - Multi-thread mode: where graph capture and instantiation can happen concurrently across threads
       // - P2P pre-connect: when there is no warm-up, P2P pre-connect is done during graph capture.
       //   Since pre-connect calls cudaMalloc, we cannot use global capture mode
@@ -703,7 +703,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   if (cudaGraphLaunches >= 1) {
     // Begin cuda graph capture
     for (int i=0; i<args->nGpus; i++) {
-      // Thread local mdoe is needed for:
+      // Thread local mode is needed for:
       // - Multi-thread mode: where graph capture and instantiation can happen concurrently across threads
       // - P2P pre-connect: when there is no warm-up, P2P pre-connect is done during graph capture.
       //   Since pre-connect calls cudaMalloc, we cannot use global capture mode
