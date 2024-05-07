@@ -123,7 +123,6 @@ static int enable_cache_flush = 0;
 
 extern "C" __global__ void flush_icache()
 {
-    printf("flush_icache called \n");
     asm __volatile__("s_icache_inv \n\t"
                      "s_nop 0 \n\t"
                      "s_nop 0 \n\t"
