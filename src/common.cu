@@ -24,6 +24,7 @@
 #include "git_version.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
+int32_t gpu_block3;
 
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
@@ -474,10 +475,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     #endif
 
-    if(enable_cache_flush > 0 && (enable_cache_flush==1 || ((iter % enable_cache_flush) == 0))) {
-      hipDeviceProp_t deviceProps;
-      CHECK_HIP_ERROR(hipGetDeviceProperties(&deviceProps, 0));
-      int32_t gpu_block3 = deviceProps.multiProcessorCount * 60;
+    if(enable_cache_flush > 0 && ((iter % enable_cache_flush) == 0)) {
       hipLaunchKernelGGL(flush_icache, dim3(gpu_block3), dim3(64), 0, args->streams[i]);
     }
 
@@ -1050,6 +1048,11 @@ int main(int argc, char* argv[]) {
         break;
       case 'F':
         enable_cache_flush = strtol(optarg, NULL, 0);
+        if (enable_cache_flush > 0) {
+          hipDeviceProp_t deviceProps;
+          CHECK_HIP_ERROR(hipGetDeviceProperties(&deviceProps, 0));
+          gpu_block3 = deviceProps.multiProcessorCount * 60;
+        }
         break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
@@ -1090,7 +1093,7 @@ int main(int argc, char* argv[]) {
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
 	    "[-O,--out_of_place <0/1>] \n\t"
-      "[-F,--cache_flush <0/1>] \n\t"
+      "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-h,--help]\n",
