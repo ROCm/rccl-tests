@@ -24,6 +24,7 @@
 #include "git_version.h"
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
+int32_t gpu_block3;
 
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
@@ -103,8 +104,45 @@ static int average = 1;
 static int numDevices = 1;
 static int delay_inout_place = 0;
 static int enable_out_of_place = 1;
+static int enable_cache_flush = 0;
 
 #define NUM_BLOCKS 32
+
+#ifndef CHECK_HIP_ERROR
+#define CHECK_HIP_ERROR(error)                    \
+    if(error != hipSuccess)                       \
+    {                                             \
+        fprintf(stderr,                           \
+                "Hip error: '%s'(%d) at %s:%d\n", \
+                hipGetErrorString(error),         \
+                error,                            \
+                __FILE__,                         \
+                __LINE__);                        \
+        exit(EXIT_FAILURE);                       \
+    }
+#endif
+
+extern "C" __global__ void flush_icache()
+{
+    asm __volatile__("s_icache_inv \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t"
+                     "s_nop 0 \n\t" ::
+                         :);
+}
 
 static double parsesize(const char *value) {
     long long int units;
@@ -436,6 +474,10 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
     }
     #endif
+
+    if(enable_cache_flush > 0 && ((iter % enable_cache_flush) == 0)) {
+      hipLaunchKernelGGL(flush_icache, dim3(gpu_block3), dim3(64), 0, args->streams[i]);
+    }
 
     TESTCHECK(args->collTest->runColl(
           (void*)(in_place ? recvBuff + args->sendInplaceOffset*rank : sendBuff),
@@ -896,6 +938,7 @@ int main(int argc, char* argv[]) {
     {"report_cputime", required_argument, 0, 'C'},
     {"average", required_argument, 0, 'a'},
     {"out_of_place", required_argument, 0, 'O'},
+    {"cache_flush", required_argument, 0, 'F'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -903,7 +946,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:a:y:s:u:h:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:a:y:s:u:h:q:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1003,6 +1046,14 @@ int main(int argc, char* argv[]) {
       case 'O':
         enable_out_of_place = strtol(optarg, NULL, 0);
         break;
+      case 'F':
+        enable_cache_flush = strtol(optarg, NULL, 0);
+        if (enable_cache_flush > 0) {
+          hipDeviceProp_t deviceProps;
+          CHECK_HIP_ERROR(hipGetDeviceProperties(&deviceProps, 0));
+          gpu_block3 = deviceProps.multiProcessorCount * 60;
+        }
+        break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
@@ -1042,6 +1093,7 @@ int main(int argc, char* argv[]) {
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
 	    "[-O,--out_of_place <0/1>] \n\t"
+      "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-h,--help]\n",
@@ -1252,6 +1304,7 @@ testResult_t run() {
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams+t*nGpus;
     threads[t].args.enable_out_of_place=enable_out_of_place;
+    threads[t].args.enable_cache_flush = enable_cache_flush;
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
