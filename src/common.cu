@@ -25,6 +25,7 @@
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 int32_t gpu_block3;
+size_t cache_bytes = 192 * 1024 * 1024; // Use 192MB
 
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
@@ -105,6 +106,7 @@ static int numDevices = 1;
 static int delay_inout_place = 0;
 static int enable_out_of_place = 1;
 static int enable_cache_flush = 0;
+static int enable_rotating_tensor = 0;
 
 #define NUM_BLOCKS 32
 
@@ -423,10 +425,16 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   size_t count = args->nbytes / wordSize(type);
 
   // Try to change offset for each iteration so that we avoid cache effects and catch race conditions in ptrExchange
-  size_t totalnbytes = std::max(args->sendBytes, args->expectedBytes);
-  size_t steps = totalnbytes ? args->maxbytes / totalnbytes : 1;
-  size_t shift = totalnbytes * (iter % steps);
-
+  size_t shift = 0;
+  if(enable_rotating_tensor) {
+    shift = cache_bytes * (iter % 2);
+  }
+  else {
+    size_t totalnbytes = std::max(args->sendBytes, args->expectedBytes);
+    size_t steps = totalnbytes ? args->maxbytes / totalnbytes : 1;
+    shift = totalnbytes * (iter % steps);
+  }
+  
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
@@ -852,6 +860,10 @@ testResult_t threadLaunch(struct testThread* thread) {
 }
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
+  if(enable_rotating_tensor) {
+    recvBytes = recvBytes + cache_bytes;
+    nbytes = nbytes + cache_bytes;
+  }
   if (memorytype == ncclFine) {
     CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
     CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
@@ -939,6 +951,7 @@ int main(int argc, char* argv[]) {
     {"average", required_argument, 0, 'a'},
     {"out_of_place", required_argument, 0, 'O'},
     {"cache_flush", required_argument, 0, 'F'},
+    {"rotating_tensor", required_argument, 0, 'R'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -946,7 +959,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:a:y:s:u:h:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:R:a:y:s:u:h:q:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1054,6 +1067,9 @@ int main(int argc, char* argv[]) {
           gpu_block3 = deviceProps.multiProcessorCount * 60;
         }
         break;
+      case 'R':
+        enable_rotating_tensor = strtol(optarg, NULL, 0);
+        break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
@@ -1094,6 +1110,7 @@ int main(int argc, char* argv[]) {
             "[-C,--report_cputime <0/1>] \n\t"
 	    "[-O,--out_of_place <0/1>] \n\t"
       "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
+      "[-R,--rotating_tensor <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-h,--help]\n",
@@ -1305,6 +1322,7 @@ testResult_t run() {
     threads[t].args.streams=streams+t*nGpus;
     threads[t].args.enable_out_of_place=enable_out_of_place;
     threads[t].args.enable_cache_flush = enable_cache_flush;
+    threads[t].args.enable_rotating_tensor = enable_rotating_tensor;
     threads[t].args.errors=errors+t;
     threads[t].args.bw=bw+t;
     threads[t].args.bw_count=bw_count+t;
