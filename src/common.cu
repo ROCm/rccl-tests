@@ -322,7 +322,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   int64_t *wrongPerGpu = nullptr;
   CUDACHECK(hipHostMalloc((void**)&wrongPerGpu, args->nGpus*sizeof(int64_t), cudaHostAllocMapped));
-  
+
   for (int i=0; i<args->nGpus; i++) {
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaSetDevice(args->gpus[i]));
@@ -362,14 +362,14 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
 }
-    
+
 testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
   cudaError_t cudaErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
   timer tim;
-  
+
   while (remaining) {
    int idle = 1;
    for (int i=0; i<ngpus; i++) {
@@ -434,7 +434,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     size_t steps = totalnbytes ? args->maxbytes / totalnbytes : 1;
     shift = totalnbytes * (iter % steps);
   }
-  
+
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
@@ -803,7 +803,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
 	char rootName[100];
-	sprintf(rootName, "%6i", root);	
+	sprintf(rootName, "%6i", root);
 	PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
 	if (enable_out_of_place) {
         	TESTCHECK(BenchTime(args, type, op, root, 0));
@@ -865,9 +865,9 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     nbytes = nbytes + cache_bytes;
   }
   if (memorytype == ncclFine) {
-    CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
-    CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
-    if (datacheck) CUDACHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocFinegrained));
+    CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocUncached));
+    CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocUncached));
+    if (datacheck) CUDACHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocUncached));
   }
   else if (memorytype == ncclHost) {
     CUDACHECK(hipHostMalloc(sendbuff, nbytes));
