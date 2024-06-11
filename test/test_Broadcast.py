@@ -22,12 +22,22 @@
 import os
 import subprocess
 import itertools
+import math
 
 import pytest
 
+ngpus = 0
+if os.environ.get('ROCR_VISIBLE_DEVICES') is not None:
+    ngpus = len(os.environ['ROCR_VISIBLE_DEVICES'].split(","))
+elif os.environ.get('HIP_VISIBLE_DEVICES') is not None:
+    ngpus = len(os.environ['HIP_VISIBLE_DEVICES'].split(","))
+else:
+    ngpus = int(subprocess.check_output("rocm-smi --showhw | wc -l",shell=True)) - 7
+log_ngpus = int(math.log2(ngpus))
+
 nthreads = ["1"]
 nprocs = ["2"]
-ngpus_single = ["1","2","4"]
+ngpus_single = [str(2**x) for x in range(log_ngpus+1)]
 ngpus_mpi = ["1","2"]
 byte_range = [("4", "128M")]
 op = ["sum", "prod", "min", "max"]
