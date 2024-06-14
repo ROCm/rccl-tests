@@ -294,6 +294,13 @@ static int ncclstringtoop (char *str) {
     return ncclSum;
 }
 
+static int ncclstringtoroot (char *str) {
+    if (strcmp(str, "all") == 0) {
+      return -1;
+    }
+    return strtol(str, NULL, 0);
+}
+
 static int ncclstringtomtype (char *str) {
     for (int o=0; o<nccl_NUM_MTYPES; o++) {
       if (strcmp(str, test_memorytypes[o]) == 0) {

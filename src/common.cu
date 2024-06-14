@@ -1019,7 +1019,7 @@ int main(int argc, char* argv[]) {
         nccltype = ncclstringtotype(optarg);
         break;
       case 'r':
-        ncclroot = strtol(optarg, NULL, 0);
+        ncclroot = ncclstringtoroot(optarg);
         break;
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
@@ -1099,7 +1099,7 @@ int main(int argc, char* argv[]) {
             "[-o,--op <sum/prod/min/max/all>] \n\t"
 #endif
             "[-d,--datatype <nccltype/all>] \n\t"
-            "[-r,--root <root>] \n\t"
+            "[-r,--root <root/all>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
             "[-Y,--memory_type <coarse/fine/host/managed>] \n\t"
             "[-s,--stress_cycles <number of cycles>] \n\t"
