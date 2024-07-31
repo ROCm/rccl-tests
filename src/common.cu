@@ -107,6 +107,9 @@ static int delay_inout_place = 0;
 static int enable_out_of_place = 1;
 static int enable_cache_flush = 0;
 static int enable_rotating_tensor = 0;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+static int local_register = 0;
+#endif
 
 #define NUM_BLOCKS 32
 
@@ -840,10 +843,22 @@ testResult_t threadInit(struct threadArgs* args) {
     NCCLCHECK(ncclCommInitRank(args->comms+i, nranks, args->ncclId, rank));
   }
   NCCLCHECK(ncclGroupEnd());
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+  void **sendRegHandles = (local_register) ? (void **)malloc(sizeof(*sendRegHandles)*args->nGpus) : NULL;
+  void **recvRegHandles = (local_register) ? (void **)malloc(sizeof(*recvRegHandles)*args->nGpus) : NULL;
+  for (int i=0; i<args->nGpus; i++) {
+    if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->sendbuffs[i], args->maxbytes, &sendRegHandles[i]));
+    if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->recvbuffs[i], args->maxbytes, &recvRegHandles[i]));
+  }
+#endif
 
   TESTCHECK(threadRunTests(args));
 
   for (int i=0; i<args->nGpus; i++) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+    if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], sendRegHandles[i]));
+    if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], recvRegHandles[i]));
+#endif
     NCCLCHECK(ncclCommDestroy(args->comms[i]));
   }
   return testSuccess;
@@ -951,7 +966,8 @@ int main(int argc, char* argv[]) {
     {"average", required_argument, 0, 'a'},
     {"out_of_place", required_argument, 0, 'O'},
     {"cache_flush", required_argument, 0, 'F'},
-    {"rotating_tensor", required_argument, 0, 'R'},
+    {"rotating_tensor", required_argument, 0, 'E'},
+    {"local_register", required_argument, 0, 'R'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -959,7 +975,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:R:a:y:s:u:h:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1067,7 +1083,7 @@ int main(int argc, char* argv[]) {
           gpu_block3 = deviceProps.multiProcessorCount * 60;
         }
         break;
-      case 'R':
+      case 'E':
         enable_rotating_tensor = strtol(optarg, NULL, 0);
         break;
       case 'a':
@@ -1075,6 +1091,14 @@ int main(int argc, char* argv[]) {
         break;
       case 'q':
         delay_inout_place = (int)strtol(optarg, NULL, 10);
+      case 'R':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+        if ((int)strtol(optarg, NULL, 0)) {
+          local_register = 1;
+        }
+#else
+        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
+#endif
         break;
       case 'h':
       default:
@@ -1109,10 +1133,11 @@ int main(int argc, char* argv[]) {
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
 	    "[-O,--out_of_place <0/1>] \n\t"
-      "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
-      "[-R,--rotating_tensor <0/1>] \n\t"
+	    "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
+	    "[-E,--rotating_tensor <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
+            "[-R,--local_register <1/0> enable local buffer registration on send/recv buffers (default: disable)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1256,6 +1281,10 @@ testResult_t run() {
 
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+  void **sendRegHandles = NULL;
+  void **recvRegHandles = NULL;
+#endif
   if (!parallel_init) {
      if (ncclProcs == 1) {
        NCCLCHECK(ncclCommInitAll(comms, nGpus*nThreads, gpus));
@@ -1267,6 +1296,14 @@ testResult_t run() {
        }
        NCCLCHECK(ncclGroupEnd());
      }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+     sendRegHandles = (local_register) ? (void **)malloc(sizeof(*sendRegHandles)*nThreads*nGpus) : NULL;
+     recvRegHandles = (local_register) ? (void **)malloc(sizeof(*recvRegHandles)*nThreads*nGpus) : NULL;
+     for (int i=0; i<nGpus*nThreads; i++) {
+       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], sendbuffs[i], sendBytes, &sendRegHandles[i]));
+       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], recvbuffs[i], recvBytes, &recvRegHandles[i]));
+     }
+#endif
   }
 
   int errors[nThreads];
@@ -1352,18 +1389,33 @@ testResult_t run() {
 #endif
 
   if (!parallel_init) {
-    for(int i=0; i<nGpus*nThreads; ++i)
+    for(int i=0; i<nGpus*nThreads; ++i) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+      if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], sendRegHandles[i]));
+      if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], recvRegHandles[i]));
+#endif
       NCCLCHECK(ncclCommDestroy(comms[i]));
+    }
     free(comms);
   }
 
   // Free off CUDA allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+    if (sendbuffs[i]) NCCLCHECK(ncclMemFree((char*)sendbuffs[i]));
+    if (recvbuffs[i]) NCCLCHECK(ncclMemFree((char*)recvbuffs[i]));
+    if (datacheck) NCCLCHECK(ncclMemFree(expected[i]));
+#else
     if (sendbuffs[i]) CUDACHECK(cudaFree((char*)sendbuffs[i]));
     if (recvbuffs[i]) CUDACHECK(cudaFree((char*)recvbuffs[i]));
     if (datacheck) CUDACHECK(cudaFree(expected[i]));
+#endif
   }
   CUDACHECK(cudaFreeHost(delta));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+  free(sendRegHandles);
+  free(recvRegHandles);
+#endif
 
   envstr = getenv("NCCL_TESTS_MIN_BW");
   double check_avg_bw = envstr ? atof(envstr) : -1;
