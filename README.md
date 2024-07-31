@@ -15,7 +15,7 @@ $ make HIP_HOME=/path/to/hip NCCL_HOME=/path/to/rccl CUSTOM_RCCL_LIB=/path/to/rc
 RCCL tests rely on MPI to work on multiple processes, hence multiple nodes. If you want to compile the tests with MPI support, you need to set MPI=1 and set MPI\_HOME to the path where MPI is installed.
 
 ```shell
-$ make MPI=1 MPI_HOME=/path/to/mpi HIP_HOME=/path/to/hip RCCL_HOME=/path/to/rccl
+$ make MPI=1 MPI_HOME=/path/to/mpi HIP_HOME=/path/to/hip NCCL_HOME=/path/to/rccl
 ```
 
 RCCL tests can also be built using cmake. A typical sequence will be:
