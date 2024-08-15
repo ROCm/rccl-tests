@@ -32,7 +32,7 @@ if os.environ.get('ROCR_VISIBLE_DEVICES') is not None:
 elif os.environ.get('HIP_VISIBLE_DEVICES') is not None:
     ngpus = len(os.environ['HIP_VISIBLE_DEVICES'].split(","))
 else:
-    ngpus = int(subprocess.check_output("rocm-smi --showhw | wc -l",shell=True)) - 7
+    ngpus = int(subprocess.check_output("rocminfo | grep \"Device Type:.\s*.GPU\" | wc -l",shell=True))
 log_ngpus = int(math.log2(ngpus))
 
 nthreads = ["1"]
