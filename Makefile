@@ -11,7 +11,7 @@ override BUILDDIR := $(abspath $(BUILDDIR))
 
 default: src.build
 
-TARGETS=$(filter-out src/hypercube.cu, $(wildcard src/*))
+TARGETS=$(filter-out src/hypercube.cu src/alltoallv.cu, $(wildcard src/*))
 
 all:   ${TARGETS:%=%.build}
 clean: ${TARGETS:%=%.clean}
