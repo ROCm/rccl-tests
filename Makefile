@@ -13,8 +13,7 @@ default: src.build
 
 TARGETS=$(filter-out src/hypercube.cu, $(wildcard src/*))
 
-all:   ${TARGETS:%=%.build}
-clean: ${TARGETS:%=%.clean}
+clean: src.clean
 
 %.build:
 	${MAKE} -C $* build BUILDDIR=${BUILDDIR}
