@@ -54,12 +54,12 @@ testResult_t AlltoAllvInitData(struct threadArgs* args, ncclDataType_t type, ncc
     size_t chunksize = data_count/nranks;
     for (int j=0; j<nranks; j++) {
       size_t scount = 0, rcount = ((j+rank)%nranks)*chunksize;
-      if ((j+rank)%nranks == 0)
+      if (j+rank == nranks-1)
         rcount += (sendcount-chunksize*(nranks-1)*nranks/2);
       size_t sdisp = 0;
       for (int k=0; k<nranks; k++) {
         scount = ((k+j)%nranks)*chunksize;
-        if ((k+j)%nranks == 0)
+        if (k+j == nranks-1)
           scount += (sendcount-chunksize*(nranks-1)*nranks/2);
         if (k == rank)
           break;
@@ -105,7 +105,7 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
   size_t chunksize = count*2/nranks;
   for (int i = 0; i < nranks; i++) {
       size_t scount = ((i+rank)%nranks)*chunksize;
-      if ((i+rank)%nranks == 0)
+      if (i+rank == nranks-1)
           scount += (count*nranks-chunksize*(nranks-1)*nranks/2);
       sendcounts[i+rank*nranks] = recvcounts[i+rank*nranks] = scount;
       sdispls[i+rank*nranks] = rdispls[i+rank*nranks] = disp;
