@@ -122,7 +122,6 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
 #else
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r<nranks; r++) {
-    if (sendcounts[r+rank*nranks] != 0) {
       NCCLCHECK(ncclSend(
           ((char*)sendbuff) + sdispls[r+rank*nranks] * wordSize(type),
           sendcounts[r+rank*nranks],
@@ -130,8 +129,6 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
           r,
           comm,
           stream));
-    }
-    if (recvcounts[r+rank*nranks] != 0) {
       NCCLCHECK(ncclRecv(
           ((char*)recvbuff) + rdispls[r+rank*nranks] * wordSize(type),
           recvcounts[r+rank*nranks],
@@ -139,7 +136,6 @@ testResult_t AlltoAllvRunColl(void* sendbuff, void* recvbuff, size_t count, nccl
           r,
           comm,
           stream));
-    }
   }
   NCCLCHECK(ncclGroupEnd());
 #endif
