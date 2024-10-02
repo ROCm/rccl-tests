@@ -8,7 +8,7 @@
 #include "cuda_runtime.h"
 #include "common.h"
 
-#define USE_RCCL_GATHER_SCATTER
+//#define USE_RCCL_GATHER_SCATTER
 
 void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
   if (count < nranks*nranks/2) {
