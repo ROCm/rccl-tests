@@ -18,6 +18,9 @@
 #include <pthread.h>
 #include "nccl1_compat.h"
 #include "timer.h"
+#include <string>
+#include <fstream>
+#include <iostream>
 
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
@@ -105,20 +108,20 @@ extern struct testColl alltoAllTest;
 
 class Reporter {
   public:
-    Reporter(std::string fileName, std::string outputFormat, const char* timeStr, bool isMain);
-    ~Reporter();
+    Reporter(std::string fileName, std::string outputFormat);
+    ~Reporter() { if (_outputValid) { _out.close(); } };
     void setParameters(const char* name, const char* typeName, const char* opName);// {
     void addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
 
   private:
-  bool isMainThread();
-  bool _outputValid = false;
-  std::ofstream _out;
-  std::string _outputFormat;
-  const char* _collectiveName;
-  const char* _typeName;
-  const char* _opName;
-}
+    bool isMainThread();
+    bool _outputValid = false;
+    std::ofstream _out;
+    std::string _outputFormat;
+    const char* _collectiveName;
+    const char* _typeName;
+    const char* _opName;
+};
 
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);

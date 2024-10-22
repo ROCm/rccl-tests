@@ -18,9 +18,6 @@
 #include <libgen.h>
 #include "cuda.h"
 #include <nlohmann/json.hpp>
-#include <string>
-#include <fstream>
-#include <iostream>
 
 //#define DEBUG_PRINT
 
@@ -119,51 +116,53 @@ static int local_register = 0;
 
 Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputFormat(outputFormat) {
   if (!fileName.empty()) {
-    _out = std::ofstream(fileName, std::ios_base::app);
-    _outputValid = true;
+    if (isMainThread()) {
+      _out = std::ofstream(fileName, std::ios_base::out);
+      _outputValid = true;
+      if (_outputFormat == "csv") {
+        _out << "collective, rankspernode, #ranks, size, type, redop, placement, time, algbw, busbw, #wrong\n";
+      }
+    }
   }
 }
 void Reporter::setParameters(const char* name, const char* typeName, const char* opName) {
-  if (!isMainThread() || !outputValid)
+  if (!isMainThread() || !_outputValid)
     return;
   
-    _collectiveName = name;
-    _typeName = typeName;
-    _opName = opName;
-
-  if (_outputFormat == "csv") {
-    _out << "collective, rankspernode, #ranks, size, type, redop, placement, algbw, busbw, #wrong\n";
-  }
+  _collectiveName = name;
+  _typeName = typeName;
+  _opName = opName;
 }
-Reporter::addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
-  if (!isMainThread() || !outputValid)
+void Reporter::addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
+  if (!isMainThread() || !_outputValid)
     return;
 
-    if (_outputFormat == "csv") {
-      _out << _collectiveName << ", "
-      _out << ranksPerNode << ", ";
-      _out << totalRanks << ", ";
-      _out << numBytes << ", ";
-      _out << _typeName << ", ";
-      _out << _opName << ", ";
-      _out << inPlace ? "in" : "out" << ", ";
-      _out << timeUsec << ", ";
-      _out << algBw << ", ";
-      _out << busBw << ", ";
-      _out << (wrongElts == -1) ? "N/A" : wrongElts << std::endl;
-    } else {
-      nlohmann::json perfOutput = {{"name", _collectiveName},
-                                    {"ranksPerNode", ranksPerNode},
-                                    {"ranks", totalRanks},
-                                    {"size", numBytes},
-                                    {"type", _typeName},
-                                    {"redop", _opName},
-                                    {"inPlace", in_place},
-                                    {"time", timeUsec},
-                                    {"algBw", algBw},
-                                    {"busBw", busBw}};
-      _out << perfOutput << std::endl;
-    }
+  if (_outputFormat == "csv") {
+    _out << _collectiveName << ", ";
+    _out << ranksPerNode << ", ";
+    _out << totalRanks << ", ";
+    _out << numBytes << ", ";
+    _out << _typeName << ", ";
+    _out << _opName << ", ";
+    _out << (inPlace ? "in" : "out") << ", ";
+    _out << timeUsec << ", ";
+    _out << algBw << ", ";
+    _out << busBw << ", ";
+    _out << ((wrongElts == -1) ? "N/A" : std::to_string(wrongElts)) << std::endl;
+  } else {
+    nlohmann::json perfOutput = {{"name", _collectiveName},
+                                  {"ranksPerNode", ranksPerNode},
+                                  {"ranks", totalRanks},
+                                  {"size", numBytes},
+                                  {"type", _typeName},
+                                  {"redop", _opName},
+                                  {"placement", (inPlace) ? "in" : "out"},
+                                  {"time", timeUsec},
+                                  {"algBw", algBw},
+                                  {"busBw", busBw},
+                                  {"#wrong", (wrongElts == -1) ? "N/A" : std::to_string(wrongElts)}};
+    _out << perfOutput << std::endl;
+  }
 }
 
 bool Reporter::isMainThread() { return is_main_thread == 1; }
@@ -866,6 +865,10 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
 #endif
 
+  if (args->reporter) {
+    args->reporter->setParameters(args->collTest->name, typeName, opName);
+  }
+
   for (size_t iter = 0; iter < stress_cycles; iter++) {
     if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
     // Benchmark
@@ -874,9 +877,6 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         char rootName[100];
         sprintf(rootName, "%6i", root);	
         PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-        if (args->reporter) {
-          args->reporter->setParameters(args->testColl->name, typeName, opName);
-        }
         if (enable_out_of_place) {
           TESTCHECK(BenchTime(args, type, op, root, 0));
           usleep(delay_inout_place);
@@ -1047,7 +1047,7 @@ int main(int argc, char* argv[]) {
     {"rotating_tensor", required_argument, 0, 'E'},
     {"local_register", required_argument, 0, 'R'},
     {"output_file", required_argument, 0, 'x'},
-    {"output_format", required_argument, 0, 'xf'},
+    {"output_format", required_argument, 0, 'Z'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -1055,7 +1055,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:x:xf:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:x:Z:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1183,7 +1183,7 @@ int main(int argc, char* argv[]) {
       case 'x':
         output_file = optarg;
         break;
-      case 'xf':
+      case 'Z':
         output_format = optarg;
         break;
       case 'h':
@@ -1225,7 +1225,7 @@ int main(int argc, char* argv[]) {
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-R,--local_register <1/0> enable local buffer registration on send/recv buffers (default: disable)] \n\t"
             "[-x,--output_file <output file name>] \n\t"
-            "[-xf,--output_format <output format <csv|json>] \n\t"
+            "[-Z,--output_format <output format <csv|json>] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1247,8 +1247,8 @@ int main(int argc, char* argv[]) {
     return -1;
   }
   if (!output_format.empty()) {
-    if !(output_format == "csv" || output_format == "json") {
-      std::cerr << "Invalid --output_format: " << output_format;
+    if (!(output_format == "csv" || output_format == "json")) {
+      std::cerr << "Invalid --output_format: " << output_format << "\n";
       return -1;
     }
   }
@@ -1427,7 +1427,7 @@ testResult_t run() {
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
         "(us)", "(GB/s)", "(GB/s)", "");
   }
-  Reporter reporter(output_file, output_format, timeStr, is_main_thread);
+  Reporter reporter(output_file, output_format);
 
   struct testThread threads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1460,7 +1460,7 @@ testResult_t run() {
     threads[t].args.bw_count=bw_count+t;
 
     threads[t].args.reportErrors = datacheck;
-    threads[t].args.reporter = reporter;
+    threads[t].args.reporter = &reporter;
 
     threads[t].func = parallel_init ? threadInit : threadRunTests;
     if (t)
