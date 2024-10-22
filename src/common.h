@@ -103,6 +103,23 @@ extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
 extern struct testColl alltoAllTest;
 
+class Reporter {
+  public:
+    Reporter(std::string fileName, std::string outputFormat, const char* timeStr, bool isMain);
+    ~Reporter();
+    void setParameters(const char* name, const char* typeName, const char* opName);// {
+    void addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
+
+  private:
+  bool isMainThread();
+  bool _outputValid = false;
+  std::ofstream _out;
+  std::string _outputFormat;
+  const char* _collectiveName;
+  const char* _typeName;
+  const char* _opName;
+}
+
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
   testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
@@ -147,6 +164,8 @@ struct threadArgs {
   int reportErrors;
 
   struct testColl* collTest;
+
+  Reporter* reporter;
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
