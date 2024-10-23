@@ -120,7 +120,13 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
       _out = std::ofstream(fileName, std::ios_base::out);
       _outputValid = true;
       if (_outputFormat == "csv") {
-        _out << "collective, rankspernode, #ranks, size, type, redop, placement, time, algbw, busbw, #wrong\n";
+        _out << "collective, ";
+#ifdef MPI_SUPPORT
+        _out << "rankspernode, ranks, gpusperrank, ";
+#else
+        _out << "gpus, ";
+#endif
+        _out << "size, type, redop, placement, time, algbw, busbw, #wrong\n";
       }
     }
   }
@@ -133,14 +139,17 @@ void Reporter::setParameters(const char* name, const char* typeName, const char*
   _typeName = typeName;
   _opName = opName;
 }
-void Reporter::addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
+void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
   if (!isMainThread() || !_outputValid)
     return;
 
   if (_outputFormat == "csv") {
     _out << _collectiveName << ", ";
+  #ifdef MPI_SUPPORT
     _out << ranksPerNode << ", ";
     _out << totalRanks << ", ";
+  #endif
+    _out << gpusPerRank << ", ";
     _out << numBytes << ", ";
     _out << _typeName << ", ";
     _out << _opName << ", ";
@@ -151,16 +160,21 @@ void Reporter::addResult(int ranksPerNode, int totalRanks, size_t numBytes, int 
     _out << ((wrongElts == -1) ? "N/A" : std::to_string(wrongElts)) << std::endl;
   } else {
     nlohmann::json perfOutput = {{"name", _collectiveName},
-                                  {"ranksPerNode", ranksPerNode},
-                                  {"ranks", totalRanks},
-                                  {"size", numBytes},
-                                  {"type", _typeName},
-                                  {"redop", _opName},
-                                  {"placement", (inPlace) ? "in" : "out"},
-                                  {"time", timeUsec},
-                                  {"algBw", algBw},
-                                  {"busBw", busBw},
-                                  {"#wrong", (wrongElts == -1) ? "N/A" : std::to_string(wrongElts)}};
+#ifdef MPI_SUPPORT
+                                {"ranksPerNode", ranksPerNode},
+                                {"ranks", totalRanks},
+                                {"gpusperrank", gpusPerRank},
+#else
+                                {"gpus", gpusPerRank},
+#endif
+                                {"size", numBytes},
+                                {"type", _typeName},
+                                {"redop", _opName},
+                                {"placement", (inPlace) ? "in" : "out"},
+                                {"time", timeUsec},
+                                {"algBw", algBw},
+                                {"busBw", busBw},
+                                {"#wrong", (wrongElts == -1) ? "N/A" : std::to_string(wrongElts)}};
     _out << perfOutput << std::endl;
   }
 }
@@ -733,10 +747,10 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   if (args->reporter) {
     if (args->reportErrors) {
-      args->reporter->addResult(args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw, wrongElts);
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw, wrongElts);
     }
     else {
-      args->reporter->addResult(args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw);
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw);
     }
   }
 

@@ -111,7 +111,7 @@ class Reporter {
     Reporter(std::string fileName, std::string outputFormat);
     ~Reporter() { if (_outputValid) { _out.close(); } };
     void setParameters(const char* name, const char* typeName, const char* opName);// {
-    void addResult(int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
+    void addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
 
   private:
     bool isMainThread();
