@@ -126,7 +126,7 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
 #else
         _out << "gpus, ";
 #endif
-        _out << "size, type, redop, placement, time, algbw, busbw, #wrong\n";
+        _out << "size, type, redop, inplace, time, algbw, busbw, #wrong\n";
       }
     }
   }
@@ -153,7 +153,7 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
     _out << numBytes << ", ";
     _out << _typeName << ", ";
     _out << _opName << ", ";
-    _out << (inPlace ? "in" : "out") << ", ";
+    _out << inPlace << ", ";
     _out << timeUsec << ", ";
     _out << algBw << ", ";
     _out << busBw << ", ";
@@ -163,14 +163,14 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
 #ifdef MPI_SUPPORT
                                 {"ranksPerNode", ranksPerNode},
                                 {"ranks", totalRanks},
-                                {"gpusperrank", gpusPerRank},
+                                {"gpusPerRank", gpusPerRank},
 #else
                                 {"gpus", gpusPerRank},
 #endif
                                 {"size", numBytes},
                                 {"type", _typeName},
                                 {"redop", _opName},
-                                {"placement", (inPlace) ? "in" : "out"},
+                                {"inPlace", inPlace},
                                 {"time", timeUsec},
                                 {"algBw", algBw},
                                 {"busBw", busBw},
