@@ -115,12 +115,15 @@ class Reporter {
 
   private:
     bool isMainThread();
+    template<typename T> std::pair<std::string, std::string> makeValueKeyPair(T v, std::string k) { return std::make_pair(std::to_string(v), k); };
+    template <> std::pair<std::string, std::string> makeValueKeyPair<std::string>(std::string v, std::string k) { return std::make_pair("\"" + v + "\"", k); };
+
     bool _outputValid = false;
     std::ofstream _out;
     std::string _outputFormat;
-    const char* _collectiveName;
-    const char* _typeName;
-    const char* _opName;
+    std::string _collectiveName;
+    std::string _typeName;
+    std::string _opName;
 };
 
 struct testEngine {

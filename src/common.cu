@@ -17,7 +17,8 @@
 #include <getopt.h>
 #include <libgen.h>
 #include "cuda.h"
-#include <nlohmann/json.hpp>
+#include <vector>
+#include <utility>
 
 //#define DEBUG_PRINT
 
@@ -143,40 +144,45 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
   if (!isMainThread() || !_outputValid)
     return;
 
-  if (_outputFormat == "csv") {
-    _out << _collectiveName << ", ";
-  #ifdef MPI_SUPPORT
-    _out << ranksPerNode << ", ";
-    _out << totalRanks << ", ";
-  #endif
-    _out << gpusPerRank << ", ";
-    _out << numBytes << ", ";
-    _out << _typeName << ", ";
-    _out << _opName << ", ";
-    _out << inPlace << ", ";
-    _out << timeUsec << ", ";
-    _out << algBw << ", ";
-    _out << busBw << ", ";
-    _out << ((wrongElts == -1) ? "N/A" : std::to_string(wrongElts)) << std::endl;
-  } else {
-    nlohmann::json perfOutput = {{"name", _collectiveName},
+  std::vector<std::pair<std::string, std::string>> outputValuesKeys;
+  std::string wrongEltsStr = (wrongElts == -1) ? "N/A" : std::to_string(wrongElts);
+
+  outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
 #ifdef MPI_SUPPORT
-                                {"ranksPerNode", ranksPerNode},
-                                {"ranks", totalRanks},
-                                {"gpusPerRank", gpusPerRank},
+  outputValuesKeys.push_back(makeValueKeyPair(ranksPerNode, "ranksPerNode"));
+  outputValuesKeys.push_back(makeValueKeyPair(totalRanks, "ranks"));
+  outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpusPerRank"));
 #else
-                                {"gpus", gpusPerRank},
+  outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpus"));
 #endif
-                                {"size", numBytes},
-                                {"type", _typeName},
-                                {"redop", _opName},
-                                {"inPlace", inPlace},
-                                {"time", timeUsec},
-                                {"algBw", algBw},
-                                {"busBw", busBw},
-                                {"#wrong", (wrongElts == -1) ? "N/A" : std::to_string(wrongElts)}};
-    _out << perfOutput << std::endl;
+  outputValuesKeys.push_back(makeValueKeyPair(numBytes, "size"));
+  outputValuesKeys.push_back(makeValueKeyPair(_typeName, "type"));
+  outputValuesKeys.push_back(makeValueKeyPair(_opName, "redop"));
+  outputValuesKeys.push_back(makeValueKeyPair(inPlace, "inPlace"));
+  outputValuesKeys.push_back(makeValueKeyPair(timeUsec, "time"));
+  outputValuesKeys.push_back(makeValueKeyPair(algBw, "algBw"));
+  outputValuesKeys.push_back(makeValueKeyPair(busBw, "busBw"));
+  outputValuesKeys.push_back(makeValueKeyPair(wrongEltsStr, "wrong"));
+
+  for (auto iter = outputValuesKeys.begin(); iter != outputValuesKeys.end(); ++iter) {
+    if (_outputFormat == "csv") {
+      _out << iter->first;
+      if (std::next(iter) != outputValuesKeys.end()) {
+        _out << ", ";
+      }
+    } else { //json
+      if (iter == outputValuesKeys.begin()) {
+        _out << "{";
+      }
+      _out << "\"" << iter->second << "\":" << iter->first;
+      if (std::next(iter) != outputValuesKeys.end()) {
+        _out << ", ";
+      } else {
+        _out << "}";
+      }
+    }
   }
+  _out << std::endl;
 }
 
 bool Reporter::isMainThread() { return is_main_thread == 1; }
