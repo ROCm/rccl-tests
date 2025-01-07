@@ -64,7 +64,7 @@ def test_AllReduceSingleProcess(nthreads, ngpus_single, byte_range, op, step_fac
         if memory_type == "fine":
             args.insert(0, "HSA_FORCE_FINE_GRAIN_PCIE=1")
         args_str = " ".join(args)
-        rccl_test = subprocess.run(args_str, stdout=subprocess.PIPE, universal_newlines=True, shell=True)
+        rccl_test = subprocess.run(args_str, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
     except subprocess.CalledProcessError as err:
         print(rccl_test.stdout)
         pytest.fail("AllReduce test error(s) detected.")
