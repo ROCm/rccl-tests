@@ -132,6 +132,7 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
     }
   }
 }
+
 void Reporter::setParameters(const char* name, const char* typeName, const char* opName) {
   if (!isMainThread() || !_outputValid)
     return;
@@ -140,15 +141,18 @@ void Reporter::setParameters(const char* name, const char* typeName, const char*
   _typeName = typeName;
   _opName = opName;
 }
+
 void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
   if (!isMainThread() || !_outputValid)
     return;
 
   std::vector<std::pair<std::string, std::string>> outputValuesKeys;
   std::string wrongEltsStr = (wrongElts == -1) ? "N/A" : std::to_string(wrongElts);
+  int nodes = totalRanks / ranksPerNode;
 
   outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
 #ifdef MPI_SUPPORT
+  outputValuesKeys.push_back(makeValueKeyPair(nodes, "nodes"));
   outputValuesKeys.push_back(makeValueKeyPair(totalRanks, "ranks"));
   outputValuesKeys.push_back(makeValueKeyPair(ranksPerNode, "ranksPerNode"));
   outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpusPerRank"));
