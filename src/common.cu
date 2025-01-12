@@ -123,7 +123,7 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
       if (_outputFormat == "csv") {
         _out << "collective, ";
 #ifdef MPI_SUPPORT
-        _out << "rankspernode, ranks, gpusperrank, ";
+        _out << "ranks, rankspernode, gpusperrank, ";
 #else
         _out << "gpus, ";
 #endif
@@ -135,7 +135,7 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
 void Reporter::setParameters(const char* name, const char* typeName, const char* opName) {
   if (!isMainThread() || !_outputValid)
     return;
-  
+
   _collectiveName = name;
   _typeName = typeName;
   _opName = opName;
@@ -149,8 +149,8 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
 
   outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
 #ifdef MPI_SUPPORT
-  outputValuesKeys.push_back(makeValueKeyPair(ranksPerNode, "ranksPerNode"));
   outputValuesKeys.push_back(makeValueKeyPair(totalRanks, "ranks"));
+  outputValuesKeys.push_back(makeValueKeyPair(ranksPerNode, "ranksPerNode"));
   outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpusPerRank"));
 #else
   outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpus"));
@@ -895,7 +895,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
         char rootName[100];
-        sprintf(rootName, "%6i", root);	
+        sprintf(rootName, "%6i", root);
         PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
         if (enable_out_of_place) {
           TESTCHECK(BenchTime(args, type, op, root, 0));
