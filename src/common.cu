@@ -17,6 +17,8 @@
 #include <getopt.h>
 #include <libgen.h>
 #include "cuda.h"
+#include <vector>
+#include <utility>
 
 //#define DEBUG_PRINT
 
@@ -99,6 +101,8 @@ static uint32_t cumask[4];
 static int streamnull = 0;
 static int timeout = 0;
 static int cudaGraphLaunches = 0;
+std::string output_file;
+std::string output_format;
 static int report_cputime = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -110,6 +114,82 @@ static int enable_rotating_tensor = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 static int local_register = 0;
 #endif
+
+Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputFormat(outputFormat) {
+  if (!fileName.empty()) {
+    if (isMainThread()) {
+      _out = std::ofstream(fileName, std::ios_base::out);
+      _outputValid = true;
+      if (_outputFormat == "csv") {
+        _out << "collective, ";
+#ifdef MPI_SUPPORT
+        _out << "ranks, rankspernode, gpusperrank, ";
+#else
+        _out << "gpus, ";
+#endif
+        _out << "size, type, redop, inplace, time, algbw, busbw, #wrong\n";
+      }
+    }
+  }
+}
+
+void Reporter::setParameters(const char* name, const char* typeName, const char* opName) {
+  if (!isMainThread() || !_outputValid)
+    return;
+
+  _collectiveName = name;
+  _typeName = typeName;
+  _opName = opName;
+}
+
+void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts) {
+  if (!isMainThread() || !_outputValid)
+    return;
+
+  std::vector<std::pair<std::string, std::string>> outputValuesKeys;
+  std::string wrongEltsStr = (wrongElts == -1) ? "N/A" : std::to_string(wrongElts);
+  int nodes = totalRanks / ranksPerNode;
+
+  outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
+#ifdef MPI_SUPPORT
+  outputValuesKeys.push_back(makeValueKeyPair(nodes, "nodes"));
+  outputValuesKeys.push_back(makeValueKeyPair(totalRanks, "ranks"));
+  outputValuesKeys.push_back(makeValueKeyPair(ranksPerNode, "ranksPerNode"));
+  outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpusPerRank"));
+#else
+  outputValuesKeys.push_back(makeValueKeyPair(gpusPerRank, "gpus"));
+#endif
+  outputValuesKeys.push_back(makeValueKeyPair(numBytes, "size"));
+  outputValuesKeys.push_back(makeValueKeyPair(_typeName, "type"));
+  outputValuesKeys.push_back(makeValueKeyPair(_opName, "redop"));
+  outputValuesKeys.push_back(makeValueKeyPair(inPlace, "inPlace"));
+  outputValuesKeys.push_back(makeValueKeyPair(timeUsec, "time"));
+  outputValuesKeys.push_back(makeValueKeyPair(algBw, "algBw"));
+  outputValuesKeys.push_back(makeValueKeyPair(busBw, "busBw"));
+  outputValuesKeys.push_back(makeValueKeyPair(wrongEltsStr, "wrong"));
+
+  for (auto iter = outputValuesKeys.begin(); iter != outputValuesKeys.end(); ++iter) {
+    if (_outputFormat == "csv") {
+      _out << iter->first;
+      if (std::next(iter) != outputValuesKeys.end()) {
+        _out << ", ";
+      }
+    } else { //json
+      if (iter == outputValuesKeys.begin()) {
+        _out << "{";
+      }
+      _out << "\"" << iter->second << "\":" << iter->first;
+      if (std::next(iter) != outputValuesKeys.end()) {
+        _out << ", ";
+      } else {
+        _out << "}";
+      }
+    }
+  }
+  _out << std::endl;
+}
+
+bool Reporter::isMainThread() { return is_main_thread == 1; }
 
 #define NUM_BLOCKS 32
 
@@ -675,6 +755,15 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
   }
 
+  if (args->reporter) {
+    if (args->reportErrors) {
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw, wrongElts);
+    }
+    else {
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw);
+    }
+  }
+
   args->bw[0] += busBw;
   args->bw_count[0]++;
   return testSuccess;
@@ -800,18 +889,22 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
 #endif
 
+  if (args->reporter) {
+    args->reporter->setParameters(args->collTest->name, typeName, opName);
+  }
+
   for (size_t iter = 0; iter < stress_cycles; iter++) {
     if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
-	char rootName[100];
-	sprintf(rootName, "%6i", root);	
-	PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-	if (enable_out_of_place) {
-        	TESTCHECK(BenchTime(args, type, op, root, 0));
-        	usleep(delay_inout_place);
-	}
+        char rootName[100];
+        sprintf(rootName, "%6i", root);
+        PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+        if (enable_out_of_place) {
+          TESTCHECK(BenchTime(args, type, op, root, 0));
+          usleep(delay_inout_place);
+        }
         TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
     }
@@ -880,9 +973,16 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     nbytes = nbytes + cache_bytes;
   }
   if (memorytype == ncclFine) {
-    CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
-    CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
-    if (datacheck) CUDACHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocFinegrained));
+    if(HIP_VERSION >= 50700000) {
+      CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocUncached));
+      CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocUncached));
+      if (datacheck) CUDACHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocUncached));
+    }
+    else {
+      CUDACHECK(hipExtMallocWithFlags(sendbuff, nbytes, hipDeviceMallocFinegrained));
+      CUDACHECK(hipExtMallocWithFlags(recvbuff, nbytes, hipDeviceMallocFinegrained));
+      if (datacheck) CUDACHECK(hipExtMallocWithFlags(expected, recvBytes, hipDeviceMallocFinegrained));
+    }
   }
   else if (memorytype == ncclHost) {
     CUDACHECK(hipHostMalloc(sendbuff, nbytes));
@@ -904,6 +1004,8 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
     if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
   }
+  CUDACHECK(hipMemset(*sendbuff, 1, nbytes));
+  if (datacheck) CUDACHECK(hipMemset(*expected, 1, recvBytes));
   return testSuccess;
 }
 
@@ -968,6 +1070,8 @@ int main(int argc, char* argv[]) {
     {"cache_flush", required_argument, 0, 'F'},
     {"rotating_tensor", required_argument, 0, 'E'},
     {"local_register", required_argument, 0, 'R'},
+    {"output_file", required_argument, 0, 'x'},
+    {"output_format", required_argument, 0, 'Z'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -975,7 +1079,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:x:Z:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1100,6 +1204,12 @@ int main(int argc, char* argv[]) {
         printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
 #endif
         break;
+      case 'x':
+        output_file = optarg;
+        break;
+      case 'Z':
+        output_format = optarg;
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1138,6 +1248,8 @@ int main(int argc, char* argv[]) {
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-R,--local_register <1/0> enable local buffer registration on send/recv buffers (default: disable)] \n\t"
+            "[-x,--output_file <output file name>] \n\t"
+            "[-Z,--output_format <output format <csv|json>] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1157,6 +1269,12 @@ int main(int argc, char* argv[]) {
            (unsigned long long)minBytes,
            (unsigned long long)maxBytes);
     return -1;
+  }
+  if (!output_format.empty()) {
+    if (!(output_format == "csv" || output_format == "json")) {
+      std::cerr << "Invalid --output_format: " << output_format << "\n";
+      return -1;
+    }
   }
 #ifdef MPI_SUPPORT
   MPI_Init(&argc, &argv);
@@ -1333,6 +1451,7 @@ testResult_t run() {
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
         "(us)", "(GB/s)", "(GB/s)", "");
   }
+  Reporter reporter(output_file, output_format);
 
   struct testThread threads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1365,6 +1484,7 @@ testResult_t run() {
     threads[t].args.bw_count=bw_count+t;
 
     threads[t].args.reportErrors = datacheck;
+    threads[t].args.reporter = &reporter;
 
     threads[t].func = parallel_init ? threadInit : threadRunTests;
     if (t)
@@ -1401,15 +1521,9 @@ testResult_t run() {
 
   // Free off CUDA allocated memory
   for (int i=0; i<nGpus*nThreads; i++) {
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-    if (sendbuffs[i]) NCCLCHECK(ncclMemFree((char*)sendbuffs[i]));
-    if (recvbuffs[i]) NCCLCHECK(ncclMemFree((char*)recvbuffs[i]));
-    if (datacheck) NCCLCHECK(ncclMemFree(expected[i]));
-#else
     if (sendbuffs[i]) CUDACHECK(cudaFree((char*)sendbuffs[i]));
     if (recvbuffs[i]) CUDACHECK(cudaFree((char*)recvbuffs[i]));
     if (datacheck) CUDACHECK(cudaFree(expected[i]));
-#endif
   }
   CUDACHECK(cudaFreeHost(delta));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)

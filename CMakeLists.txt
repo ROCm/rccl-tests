@@ -3,27 +3,6 @@
 # ########################################################################
 #Adding pthread flag for linking
 set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-macro(check_mpi mpi_compiler mpi_lib_a mpi_lib_so mpi_bin_dir mpi_base_lib_dir mpi_inc_dir)
-    find_program(MPI_MPICXX ${mpi_compiler} PATHS ${mpi_bin_dir} NO_DEFAULT_PATH)
-    if (MPI_MPICXX)
-        message ("-- ${mpi_compiler} found @ ${MPI_MPICXX}")
-        find_file(MPI_H mpi.h PATHS ${mpi_inc_dir} NO_DEFAULT_PATH)
-        message ("-- mpi.h is in ${MPI_H}")
-        find_file(MPI_LIB NAMES ${mpi_lib_so} ${mpi_lib_a} PATHS ${mpi_base_lib_dir} PATH_SUFFIXES lib lib64 lib/x86_64-linux-gnu NO_DEFAULT_PATH)
-        message ("-- libmpi is ${MPI_LIB}")
-	if (NOT MPI_H OR NOT MPI_LIB)
-	    set (MPI_MPICXX "MPI_MPICXX-NOTFOUND")
-	    set (MPI_H "MPI_H-NOTFOUND")
-	    set (MPI_LIB "MPI_LIB-NOTFOUND")
-	else()
-            add_definitions(-DMPI_SUPPORT)
-            include_directories(${mpi_inc_dir})
-            link_libraries(${MPI_LIB})
-	endif()
-    else()
-        message ("-- ${mpi_compiler} not found")
-    endif()
-endmacro()
 
 cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
 
@@ -51,8 +30,7 @@ include(ROCMCheckTargetIds)
 include(ROCMClients)
 
 # Build variables
-option(NO_MPI "Build RCCL-tests without MPI support.")
-option(MPI_PATH "Use MPI in the specified directory.")
+option(USE_MPI "Build RCCL-tests with MPI support.")
 
 # Default GPU architectures to build
 #==================================================================================================
@@ -84,64 +62,23 @@ set(GPU_TARGETS "${SUPPORTED_GPUS}" CACHE STRING "List of specific GPU architect
 message(STATUS "Compiling for ${GPU_TARGETS}")
 
 find_package(RCCL HINTS CONFIG REQUIRED PATHS "${ROCM_PATH}")
+if (RCCL_FOUND)
+    message(STATUS "RCCL version : ${RCCL_VERSION}")
+    message(STATUS "RCCL include path : ${RCCL_INCLUDE_DIRS}")
+    message(STATUS "RCCL libraries : ${RCCL_LIBRARIES}")
+endif()
 
-if (NOT NO_MPI)
-    # CHECK for MPI Path first. User requested this directory explicitely
-    if (MPI_PATH)
-        set(mpi_spec_bin_dir "${MPI_PATH}/bin")
-	set(mpi_spec_inc_dir "${MPI_PATH}/include")
-        check_mpi(mpicxx libmpi.a libmpi.so ${mpi_spec_bin_dir} ${MPI_PATH} ${mpi_spec_inc_dir})
-	if (NOT MPI_MPICXX)
-            # Since the user explicitely requested this directory, abort if something went wrong.
-	    MESSAGE(FATAL_ERROR "Could not find MPI in ${MPI_PATH}")
-        endif()
-    endif()
-
-    # Check for MPICH Ubuntu installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx.mpich libmpich.a libmpich.so /usr/bin /usr /usr/include/x86_64-linux-gnu/mpich)
-    endif()
-
-    # Check for Open MPI Ubuntu installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx.openmpi libmpi.a libmpi.so /usr/bin  /usr/lib/x86_64-linux-gnu/openmpi /usr/lib/x86_64-linux-gnu/openmpi/include)
-    endif()
-
-    # Check for MPICH RHEL installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpich.a libmpich.so /usr/lib64/mpich/bin /usr/lib64/mpich /usr/include/mpich-x86_64)
-    endif()
-
-    # Check for Open MPI RHEL installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/openmpi/bin /usr/lib64/openmpi /usr/include/openmpi-x64_64)
-    endif()
-
-    # Check for MPICH SLES installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpich.a libmpich.so /usr/lib64/mpi/gcc/mpich/bin /usr/lib64/mpi/gcc/mpich /usr/lib64/mpi/gcc/mpich/include)
-    endif()
-
-    # Check for Open MPI v4 SLES installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi4/bin /usr/lib64/mpi/gcc/openmpi4 /usr/lib64/mpi/gcc/openmpi4/include)
-    endif()
-
-    # Check for Open MPI v3 SLES installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi3/bin /usr/lib64/mpi/gcc/openmpi3 /usr/lib64/mpi/gcc/openmpi3/include)
-    endif()
-
-    # Check for Open MPI v2 SLES installation
-    if (NOT MPI_MPICXX)
-        check_mpi(mpicxx libmpi.a libmpi.so /usr/lib64/mpi/gcc/openmpi2/bin /usr/lib64/mpi/gcc/openmpi2 /usr/lib64/mpi/gcc/openmpi2/include)
-    endif()
-
-    if (NOT MPI_MPICXX)
+if (USE_MPI)
+    find_package(MPI REQUIRED)
+    if (MPI_FOUND)
+        message(STATUS "MPI include path : ${MPI_CXX_INCLUDE_PATH}")
+        message(STATUS "MPI libraries : ${MPI_CXX_LIBRARIES}")
+        add_definitions(-DMPI_SUPPORT)
+    else()
         message ("-- no MPI library found")
     endif()
 else()
-    message ("-- MPI support explicitely disabled")
+    message ("-- MPI support disabled")
 endif()
 
 set(ROCM_USE_DEV_COMPONENT OFF)  # This repo doesn't have a dev component

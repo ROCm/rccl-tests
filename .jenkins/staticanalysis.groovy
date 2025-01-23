@@ -14,7 +14,6 @@ def runCI =
     nodeDetails, jobName->
 
     def prj  = new rocProject('rccl-tests', 'StaticAnalysis')
-    prj.paths.build_command = './install.sh'
 
     // Define test architectures, optional rocm version argument is available
     def nodes = new dockerNodes(nodeDetails, jobName, prj)
@@ -22,31 +21,20 @@ def runCI =
     boolean formatCheck = false
     boolean staticAnalysis = true
 
-    def commonGroovy
-
-    def compileCommand =
-    {
-        platform, project->
-
-        commonGroovy = load "${project.paths.project_src_prefix}/.jenkins/common.groovy"
-        commonGroovy.runCompileCommand(platform, project, jobName)
-    }
-
-    buildProject(prj, formatCheck, nodes.dockerArray, compileCommand, null, null)
+    buildProject(prj, formatCheck, nodes.dockerArray, null, null, null, staticAnalysis)
 }
 
 ci: { 
     String urlJobName = auxiliary.getTopJobName(env.BUILD_URL)
 
-    def propertyList = ["compute-rocm-dkms-no-npi":[pipelineTriggers([cron('0 1 * * 0')])],
-                        "compute-rocm-dkms-no-npi-hipclang":[pipelineTriggers([cron('0 1 * * 0')])],
-                        "rocm-docker":[]]
+    def propertyList = [
+        "compute-rocm-dkms-no-npi-hipclang":[pipelineTriggers([cron('0 1 * * 0')])]
+    ]
     propertyList = auxiliary.appendPropertyList(propertyList)
 
-    def jobNameList = ["compute-rocm-dkms-no-npi":([ubuntu22:['cpu']]),
-                       "rocm-docker":([ubuntu22:['cpu']])]
-
-    jobNameList['compute-rocm-dkms-no-npi-hipclang'] = [ubuntu22:['cpu']]
+    def jobNameList = [
+        "compute-rocm-dkms-no-npi-hipclang":([ubuntu22:['cpu']])
+    ]
     jobNameList = auxiliary.appendJobNameList(jobNameList)
 
     propertyList.each
@@ -68,7 +56,7 @@ ci: {
     // For url job names that are not listed by the jobNameList i.e. compute-rocm-dkms-no-npi-1901
     if(!jobNameList.keySet().contains(urlJobName))
     {
-        properties(auxiliary.addCommonProperties([pipelineTriggers([cron('0 1 * * *')])]))
+        properties(auxiliary.addCommonProperties([pipelineTriggers([cron('0 1 * * 0')])]))
         stage(urlJobName) {
             runCI([ubuntu22:['cpu']], urlJobName)
         }
