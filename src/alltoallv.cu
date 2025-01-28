@@ -10,7 +10,7 @@
 
 #define USE_RCCL_GATHER_SCATTER
 
-void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
+void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   if (count < nranks*nranks/2) {
     *sendcount = 0;
     *recvcount = 0;
@@ -18,11 +18,11 @@ void AlltoAllvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *par
     *recvInplaceOffset = 0;
     *paramcount = 0;
   } else {
-    *sendcount = (count/nranks)*nranks;
-    *recvcount = (count/nranks)*nranks;
+    *paramcount = (count/nranks) & -(16/eltSize);
+    *sendcount = nranks*(*paramcount);
+    *recvcount = *sendcount;
     *sendInplaceOffset = 0;
     *recvInplaceOffset = 0;
-    *paramcount = count/nranks;
   }
 }
 
@@ -161,7 +161,7 @@ struct testColl alltoAllTest = {
 
 void AlltoAllvGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  AlltoAllvGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
+  AlltoAllvGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, /*eltSize=*/1, nranks);
 }
 
 testResult_t AlltoAllvRunTest(struct threadArgs* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {
