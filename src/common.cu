@@ -90,13 +90,13 @@ static int datacheck = 1;
 static int warmup_iters = 5;
 static int iters = 20;
 static int agg_iters = 1;
+static int run_cycles = 1;
 static int ncclop = ncclSum;
 static int nccltype = ncclFloat;
 static int ncclroot = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
 static int memorytype = 0;
-static int stress_cycles = 1;
 static uint32_t cumask[4];
 static int streamnull = 0;
 static int timeout = 0;
@@ -774,7 +774,7 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   size_t count, sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
 
   count = size / wordSize(type);
-  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, (size_t)nranks);
+  args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, wordSize(type), (size_t)nranks);
 
   args->nbytes = paramCount * wordSize(type);
   args->sendBytes = sendCount * wordSize(type);
@@ -893,22 +893,24 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     args->reporter->setParameters(args->collTest->name, typeName, opName);
   }
 
-  for (size_t iter = 0; iter < stress_cycles; iter++) {
-    if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
-    // Benchmark
+  // Benchmark
+  long repeat = run_cycles;
+  do {
+    if (run_cycles > 1) PRINT("# Testing %lu cycle.\n", run_cycles - repeat);
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
-        setupArgs(size, type, args);
-        char rootName[100];
-        sprintf(rootName, "%6i", root);
-        PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
-        if (enable_out_of_place) {
-          TESTCHECK(BenchTime(args, type, op, root, 0));
-          usleep(delay_inout_place);
-        }
-        TESTCHECK(BenchTime(args, type, op, root, 1));
-        PRINT("\n");
+      setupArgs(size, type, args);
+      char rootName[100];
+      sprintf(rootName, "%6i", root);
+      PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+      if (enable_out_of_place) {
+        TESTCHECK(BenchTime(args, type, op, root, 0));
+        usleep(delay_inout_place);
+      }
+      TESTCHECK(BenchTime(args, type, op, root, 1));
+      PRINT("\n");
     }
-  }
+  } while (--repeat);
+
   return testSuccess;
 }
 
@@ -1052,26 +1054,27 @@ int main(int argc, char* argv[]) {
     {"iters", required_argument, 0, 'n'},
     {"agg_iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
+    {"run_cycles", required_argument, 0, 'N'},
     {"parallel_init", required_argument, 0, 'p'},
     {"check", required_argument, 0, 'c'},
     {"op", required_argument, 0, 'o'},
     {"datatype", required_argument, 0, 'd'},
     {"root", required_argument, 0, 'r'},
     {"blocking", required_argument, 0, 'z'},
-    {"memory_type", required_argument, 0, 'y'}, //RCCL
-    {"stress_cycles", required_argument, 0, 's'}, //RCCL
-    {"cumask", required_argument, 0, 'u'},        //RCCL
-    {"stream_null", required_argument, 0, 'y'}, //NCCL
-    {"timeout", required_argument, 0, 'T'},     //NCCL
+    {"stream_null", required_argument, 0, 'y'},
+    {"timeout", required_argument, 0, 'T'},
     {"cudagraph", required_argument, 0, 'G'},
     {"report_cputime", required_argument, 0, 'C'},
     {"average", required_argument, 0, 'a'},
-    {"out_of_place", required_argument, 0, 'O'},
-    {"cache_flush", required_argument, 0, 'F'},
-    {"rotating_tensor", required_argument, 0, 'E'},
     {"local_register", required_argument, 0, 'R'},
-    {"output_file", required_argument, 0, 'x'},
-    {"output_format", required_argument, 0, 'Z'},
+    {"memory_type", required_argument, 0, 'Y'},       //RCCL
+    {"cumask", required_argument, 0, 'u'},            //RCCL
+    {"out_of_place", required_argument, 0, 'O'},      //RCCL
+    {"cache_flush", required_argument, 0, 'F'},       //RCCL
+    {"rotating_tensor", required_argument, 0, 'E'},   //RCCL
+    {"delay_inout_place", required_argument, 0, 'q'}, //RCCL
+    {"output_file", required_argument, 0, 'x'},       //RCCL
+    {"output_format", required_argument, 0, 'Z'},     //RCCL
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -1079,7 +1082,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:p:c:o:d:r:z:Y:T:G:C:O:F:E:R:a:y:s:u:h:q:x:Z:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:F:E:q:x:Z:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1108,7 +1111,12 @@ int main(int argc, char* argv[]) {
         maxBytes = (size_t)parsed;
         break;
       case 'i':
-        stepBytes = strtol(optarg, NULL, 0);
+        parsed = parsesize(optarg);
+        if (parsed < 0) {
+          fprintf(stderr, "invalid size specified for 'stepBytes'\n");
+          return -1;
+        }
+        stepBytes = (size_t)parsed;
         break;
       case 'f':
         stepFactor = strtol(optarg, NULL, 0);
@@ -1126,11 +1134,14 @@ int main(int argc, char* argv[]) {
       case 'w':
         warmup_iters = (int)strtol(optarg, NULL, 0);
         break;
-      case 'c':
-        datacheck = (int)strtol(optarg, NULL, 0);
+      case 'N':
+        run_cycles = (int)strtol(optarg, NULL, 0);
         break;
       case 'p':
         parallel_init = (int)strtol(optarg, NULL, 0);
+        break;
+      case 'c':
+        datacheck = (int)strtol(optarg, NULL, 0);
         break;
       case 'o':
         ncclop = ncclstringtoop(optarg);
@@ -1144,22 +1155,6 @@ int main(int argc, char* argv[]) {
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
         break;
-      case 'Y':
-        memorytype = ncclstringtomtype(optarg);
-        break;
-      case 's':
-        stress_cycles = strtol(optarg, NULL, 0);
-        break;
-      case 'u':
-        {
-          int nmasks = 0;
-          char *mask = strtok(optarg, ",");
-          while (mask != NULL && nmasks < 4) {
-            cumask[nmasks++] = strtol(mask, NULL, 16);
-            mask = strtok(NULL, ",");
-          };
-        }
-	break;
       case 'y':
         streamnull = strtol(optarg, NULL, 0);
         break;
@@ -1176,6 +1171,31 @@ int main(int argc, char* argv[]) {
       case 'C':
         report_cputime = strtol(optarg, NULL, 0);
         break;
+      case 'a':
+        average = (int)strtol(optarg, NULL, 0);
+        break;
+      case 'R':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+        if ((int)strtol(optarg, NULL, 0)) {
+          local_register = 1;
+        }
+#else
+        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
+#endif
+        break;
+      case 'Y':
+        memorytype = ncclstringtomtype(optarg);
+        break;
+      case 'u':
+        {
+          int nmasks = 0;
+          char *mask = strtok(optarg, ",");
+          while (mask != NULL && nmasks < 4) {
+            cumask[nmasks++] = strtol(mask, NULL, 16);
+            mask = strtok(NULL, ",");
+          };
+        }
+	break;
       case 'O':
         enable_out_of_place = strtol(optarg, NULL, 0);
         break;
@@ -1190,19 +1210,8 @@ int main(int argc, char* argv[]) {
       case 'E':
         enable_rotating_tensor = strtol(optarg, NULL, 0);
         break;
-      case 'a':
-        average = (int)strtol(optarg, NULL, 0);
-        break;
       case 'q':
         delay_inout_place = (int)strtol(optarg, NULL, 10);
-      case 'R':
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-        if ((int)strtol(optarg, NULL, 0)) {
-          local_register = 1;
-        }
-#else
-        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
-#endif
         break;
       case 'x':
         output_file = optarg;
@@ -1223,6 +1232,7 @@ int main(int argc, char* argv[]) {
             "[-n,--iters <iteration count>] \n\t"
             "[-m,--agg_iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
+            "[-N,--run_cycles <cycle count> run & print each cycle (default: 1; 0=infinite)] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <check iteration count>] \n\t"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
@@ -1235,21 +1245,20 @@ int main(int argc, char* argv[]) {
             "[-d,--datatype <nccltype/all>] \n\t"
             "[-r,--root <root/all>] \n\t"
             "[-z,--blocking <0/1>] \n\t"
-            "[-Y,--memory_type <coarse/fine/host/managed>] \n\t"
-            "[-s,--stress_cycles <number of cycles>] \n\t"
-            "[-u,--cumask <d0,d1,d2,d3>] \n\t"
             "[-y,--stream_null <0/1>] \n\t"
             "[-T,--timeout <time in seconds>] \n\t"
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
-	    "[-O,--out_of_place <0/1>] \n\t"
-	    "[-F,--cache_flush <number of iterations between instruction cache flush>] \n\t"
-	    "[-E,--rotating_tensor <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
-            "[-q,--delay <delay between out-of-place and in-place in microseconds>] \n\t"
             "[-R,--local_register <1/0> enable local buffer registration on send/recv buffers (default: disable)] \n\t"
-            "[-x,--output_file <output file name>] \n\t"
-            "[-Z,--output_format <output format <csv|json>] \n\t"
+            "[-Y,--memory_type <coarse/fine/host/managed> (default: coarse)] \n\t"
+            "[-u,--cumask <d0,d1,d2,d3>] \n\t"
+	    "[-O,--out_of_place <0/1> (default: 1)] \n\t"
+	    "[-F,--cache_flush <number of iterations between instruction cache flush> (default: 0)] \n\t"
+	    "[-E,--rotating_tensor <0/1> (default: 0)] \n\t"
+            "[-q,--delay <delay between out-of-place and in-place in microseconds> (default: 10)] \n\t"
+            "[-x,--output_file <output file name> (default: disabled)] \n\t"
+            "[-Z,--output_format <csv|json> (default: disabled)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1418,8 +1427,8 @@ testResult_t run() {
      sendRegHandles = (local_register) ? (void **)malloc(sizeof(*sendRegHandles)*nThreads*nGpus) : NULL;
      recvRegHandles = (local_register) ? (void **)malloc(sizeof(*recvRegHandles)*nThreads*nGpus) : NULL;
      for (int i=0; i<nGpus*nThreads; i++) {
-       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], sendbuffs[i], sendBytes, &sendRegHandles[i]));
-       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], recvbuffs[i], recvBytes, &recvRegHandles[i]));
+       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], sendbuffs[i], maxBytes, &sendRegHandles[i]));
+       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], recvbuffs[i], maxBytes, &recvRegHandles[i]));
      }
 #endif
   }
