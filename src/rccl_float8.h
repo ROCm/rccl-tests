@@ -24,8 +24,9 @@
 #define ROCBLAS_FLOAT8_H
 
 #include <stdint.h>
+#include <hip/hip_version.h>
 
-#if __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+#if __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
 /*! \brief Struct to represent a 8 bit floating-point number. */
 
 typedef struct
@@ -38,7 +39,119 @@ typedef struct
     uint8_t data;
 } rccl_bfloat8;
 
-#else // __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+// __cplusplus < 201103L || (!defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__))
+#elif HIP_VERSION >= 60200000
+
+#include <hip/hip_fp8.h>
+
+#if   __HIP_DEVICE_COMPILE__ && (defined(__gfx950__) || defined(__gfx1200__) || defined(__gfx1201__) ||  (defined(__gfx1100__) || defined(__gfx1101__)))//HIP_FP8_TYPE_OCP is enabled.
+typedef __hip_fp8_e4m3 rccl_float8;
+typedef __hip_fp8_e5m2 rccl_bfloat8;
+#elif __HIP_DEVICE_COMPILE__ && (defined(__gfx942__))
+typedef __hip_fp8_e4m3_fnuz rccl_float8;
+typedef __hip_fp8_e5m2_fnuz rccl_bfloat8;
+#else
+typedef __hip_fp8_e4m3 rccl_float8;
+typedef __hip_fp8_e5m2 rccl_bfloat8;
+#endif
+
+#if   __HIP_DEVICE_COMPILE__
+inline std::ostream& operator<<(std::ostream& os, const rccl_float8& f8)
+{
+    return os << float(f8);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const rccl_bfloat8& bf8)
+{
+    return os << float(bf8);
+}
+
+inline __host__ __device__ float operator*(rccl_float8 a, rccl_float8 b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(rccl_bfloat8 a, rccl_bfloat8 b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(rccl_float8 a, float b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(rccl_bfloat8 a, float b)
+{
+    return float(a) * float(b);
+}
+#else
+inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e4m3& f8)
+{
+    return os << float(f8);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e5m2& bf8)
+{
+    return os << float(bf8);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e4m3 a, __hip_fp8_e4m3 b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e5m2 a, __hip_fp8_e5m2 b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e4m3 a, float b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e5m2 a, float b)
+{
+    return float(a) * float(b);
+}
+
+//adding support for those operators on the host side
+inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e4m3_fnuz& f8)
+{
+    return os << float(f8);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e5m2_fnuz& bf8)
+{
+    return os << float(bf8);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e4m3_fnuz a, __hip_fp8_e4m3_fnuz b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e5m2_fnuz a, __hip_fp8_e5m2_fnuz b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e4m3_fnuz a, float b)
+{
+    return float(a) * float(b);
+}
+
+inline __host__ __device__ float operator*(__hip_fp8_e5m2_fnuz a, float b)
+{
+    return float(a) * float(b);
+}
+#endif
+
+extern bool rccl_float8_useFnuz;
+// For older versions of ROCm that do not include hip_fp8.h,
+// we provide a local version of the header file as a fallback.
+#else
 
 #define HIP_HOST_DEVICE __host__ __device__
 #define HIP_HOST __host__
@@ -344,7 +457,7 @@ struct rccl_float8
     // default constructor
     HIP_HOST_DEVICE rccl_float8() = default;
 
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
     // device specific optimized F8 down-conversion code
 
     template <bool stochastic_rounding = false>
@@ -381,10 +494,10 @@ struct rccl_float8
         return i8data;
     }
 
-#endif // __gfx940__
+#endif // __gfx942__
 
     // constructor from float
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
 
     // NOTE: ON-DEVICE... always optimal bias
     explicit HIP_DEVICE rccl_float8(float                        v,
@@ -402,7 +515,7 @@ struct rccl_float8
     // Host only implementation using s/w simulation
     explicit HIP_HOST
 #else
-    // both Host and DEVICE for non-gfx940 using s/w simulation
+    // both Host and DEVICE for non-gfx942 using s/w simulation
     explicit HIP_HOST_DEVICE
 #endif
         rccl_float8(float                        v,
@@ -446,7 +559,7 @@ struct rccl_float8
     }
 
     // convert to float
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
     // upcast using device specific intrinsic
     explicit inline HIP_DEVICE operator float() const
     {
@@ -460,7 +573,7 @@ struct rccl_float8
     }
 
     explicit inline HIP_HOST operator float() const
-#else // non gfx940
+#else // non gfx942
     explicit inline HIP_HOST_DEVICE operator float() const
 #endif
     {
@@ -511,7 +624,7 @@ struct rccl_bfloat8
     // default constructor
     HIP_HOST_DEVICE rccl_bfloat8() = default;
 
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
     // device specific optimized F8 down-conversion code
 
     template <bool stochastic_rounding = false>
@@ -548,10 +661,10 @@ struct rccl_bfloat8
         return i8data;
     }
 
-#endif // __gfx940__
+#endif // __gfx942__
 
     // constructor from float
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
 
     // NOTE: ON-DEVICE... always optimal bias
     explicit HIP_DEVICE rccl_bfloat8(float                        v,
@@ -569,7 +682,7 @@ struct rccl_bfloat8
     // Host only implementation using s/w simulation
     explicit HIP_HOST
 #else
-    // both Host and DEVICE for non-gfx940 using s/w simulation
+    // both Host and DEVICE for non-gfx942 using s/w simulation
     explicit HIP_HOST_DEVICE
 #endif
         rccl_bfloat8(float                        v,
@@ -613,7 +726,7 @@ struct rccl_bfloat8
     }
 
     // convert to float
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
     // upcast using device specific intrinsic
     explicit inline HIP_DEVICE operator float() const
     {
@@ -627,7 +740,7 @@ struct rccl_bfloat8
     }
 
     explicit inline HIP_HOST operator float() const
-#else // non gfx940
+#else // non gfx942
     explicit inline HIP_HOST_DEVICE operator float() const
 #endif
     {
@@ -969,7 +1082,7 @@ inline __host__ __device__ T explicit_downcast(Ta a, uint32_t rng = 0)
     return a;
 }
 
-// Use h/w intrinsic and optimized version when __gfx940__
+// Use h/w intrinsic and optimized version when __gfx942__
 template <
     typename T,
     typename Ta,
@@ -980,7 +1093,7 @@ template <
     = 0>
 inline __host__ __device__ T explicit_downcast(Ta a, uint32_t rng)
 {
-#if defined(__gfx940__) || defined(__gfx941__) || defined(__gfx942__)
+#if defined(__gfx942__) || defined(__gfx950__)
     // NOTE: we are directly calling cast_to_f8_from_f32 instead of constructor to optimize away one runtime branch
     T val;
     if(std::is_same<T, rccl_float8>::value)
@@ -988,12 +1101,12 @@ inline __host__ __device__ T explicit_downcast(Ta a, uint32_t rng)
     else
         val.data = rccl_bfloat8::cast_to_bf8_from_f32<stochastic_rounding>(float(a), rng);
     return val;
-#else // non gfx940
+#else // non gfx942
     return T(float(a),
              stochastic_rounding ? T::rocblas_hip_f8_rounding_mode::stochastic
                                  : T::rocblas_hip_f8_rounding_mode::standard,
              rng);
-#endif // __gfx940__
+#endif // __gfx942__
 }
 
 // NOTE NOTE: The above code is good if we don't consider HIP-GEMM code and only consider the quantization
@@ -1016,6 +1129,6 @@ inline __host__ __device__ T explicit_downcast(Ta a, uint32_t rng)
 
 // =================================================================================================
 
-#endif // __cplusplus < 201103L || (!defined(__HCC__) && !defined(__HIPCC__))
+#endif
 
 #endif // ROCBLAS_FLOAT8_H

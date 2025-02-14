@@ -258,8 +258,8 @@ static size_t wordSize(ncclDataType_t type) {
     //case ncclInt8:
     case ncclUint8:
 #if NCCL_MAJOR >= 2 && RCCL_FLOAT8 == 1
-    case ncclFp8E4M3:
-    case ncclFp8E5M2:
+    case ncclFloat8e4m3:
+    case ncclFloat8e5m2 :
 #endif
 #endif
       return 1;

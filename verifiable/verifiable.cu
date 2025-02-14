@@ -22,12 +22,16 @@
 #endif
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_FLOAT8 == 1
-  #define HAVE_ncclfp8 1
+#if __HIP_DEVICE_COMPILE__
+  #define HAVE_ncclfp8_DEVICE 1
+#else
+  #define HAVE_ncclfp8_HOST 1
   // Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
-  #if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
-    #define ncclFp8E4M3 ncclFloat8e4m3
-    #define ncclFp8E5M2 ncclFloat8e5m2
-  #endif
+  // #if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
+  //   #define ncclFp8E4M3 ncclFloat8e4m3
+  //   #define ncclFp8E5M2 ncclFloat8e5m2
+  // #endif
+#endif
 #else
   #define HAVE_ncclfp8 0
 #endif
@@ -352,6 +356,7 @@ struct FloatLayout<hip_bfloat16> {
 };
 #endif
 #if RCCL_FLOAT8 == 1
+#if __HIP_DEVICE_COMPILE__
 template<>
 struct FloatLayout<rccl_float8> {
   static constexpr int exponent_bits = 4, mantissa_bits = 3;
@@ -362,6 +367,29 @@ struct FloatLayout<rccl_bfloat8> {
   static constexpr int exponent_bits = 5, mantissa_bits = 2;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
+#else
+template<>
+struct FloatLayout<__hip_fp8_e4m3> {
+  static constexpr int exponent_bits = 4, mantissa_bits = 3;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
+};
+template<>
+struct FloatLayout<__hip_fp8_e5m2> {
+  static constexpr int exponent_bits = 5, mantissa_bits = 2;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
+};
+
+template<>
+struct FloatLayout<__hip_fp8_e4m3_fnuz> {
+  static constexpr int exponent_bits = 4, mantissa_bits = 3;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
+};
+template<>
+struct FloatLayout<__hip_fp8_e5m2_fnuz> {
+  static constexpr int exponent_bits = 5, mantissa_bits = 2;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
+};
+#endif
 #endif
 
 template<typename T>
@@ -894,9 +922,15 @@ void prepareInput1(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
-  #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  #if HAVE_ncclfp8_DEVICE
+  case ncclFloat8e4m3: CASE_TY(rccl_float8)
+  case ncclFloat8e5m2: CASE_TY(rccl_bfloat8)
+  #endif
+  #if HAVE_ncclfp8_HOST
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e4m3_fnuz);}
+  else { CASE_TY(__hip_fp8_e4m3);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e5m2_fnuz);}
+  else { CASE_TY(__hip_fp8_e5m2);}
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -974,9 +1008,15 @@ void prepareExpected1(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
-  #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  #if HAVE_ncclfp8_DEVICE
+  case ncclFloat8e4m3: CASE_TY(rccl_float8)
+  case ncclFloat8e5m2: CASE_TY(rccl_bfloat8)
+  #endif
+  #if HAVE_ncclfp8_HOST
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e4m3_fnuz);}
+  else { CASE_TY(__hip_fp8_e4m3);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e5m2_fnuz);}
+  else { CASE_TY(__hip_fp8_e5m2);}
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -1048,9 +1088,9 @@ __host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
     coef = .66f;
     break;
   #endif
-  #if HAVE_ncclfp8
-  case ncclFp8E4M3:
-  case ncclFp8E5M2:
+  #if HAVE_ncclfp8_DEVICE || HAVE_ncclfp8_HOST
+  case ncclFloat8e4m3:
+  case ncclFloat8e5m2:
     power = .91f;
     coef = .66f;
     break;
@@ -1179,9 +1219,9 @@ void ncclVerifiableVerify(
   #if HAVE_ncclBfloat16
     floating |= elt_ty == ncclBfloat16;
   #endif
-  #if HAVE_ncclfp8
-    floating |= elt_ty == ncclFp8E4M3;
-    floating |= elt_ty == ncclFp8E5M2;
+  #if HAVE_ncclfp8_DEVICE || HAVE_ncclfp8_HOST
+    floating |= elt_ty == ncclFloat8e4m3;
+    floating |= elt_ty == ncclFloat8e5m2;
   #endif
 
   unsigned tolerance = 0;
@@ -1211,9 +1251,15 @@ void ncclVerifiableVerify(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
   #endif
-  #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8, uint8_t)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8, uint8_t)
+  #if HAVE_ncclfp8_DEVICE
+  case ncclFloat8e4m3: CASE_TY(rccl_float8, uint8_t)
+  case ncclFloat8e5m2: CASE_TY(rccl_bfloat8, uint8_t)
+  #endif
+  #if HAVE_ncclfp8_HOST
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e4m3_fnuz, uint8_t);}
+  else { CASE_TY(__hip_fp8_e4m3, uint8_t);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e5m2_fnuz, uint8_t);}
+  else { CASE_TY(__hip_fp8_e5m2, uint8_t);}
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
@@ -1282,9 +1328,9 @@ __global__ void sweep() {
   #if HAVE_ncclBfloat16
     sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
-  #if HAVE_ncclfp8
-    sweep1<rccl_float8>(ncclFp8E4M3, "fp8_e4m3");
-    sweep1<rccl_bfloat8>(ncclFp8E5M2, "fp8_e5m2");
+  #if HAVE_ncclfp8 && __HIP_DEVICE_COMPILE__
+    sweep1<rccl_float8>(ncclFloat8e4m3, "fp8_e4m3");
+    sweep1<rccl_bfloat8>(ncclFloat8e5m2, "fp8_e5m2");
   #endif
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");

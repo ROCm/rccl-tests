@@ -96,7 +96,7 @@ testResult_t ReduceRunTest(struct threadArgs* args, int root, ncclDataType_t typ
   for (int i=0; i<type_count; i++) {
     for (int j=0; j<op_count; j++) {
 #if defined(RCCL_FLOAT8)
-      if((run_types[i] == ncclFp8E4M3 || run_types[i] == ncclFp8E5M2) && run_ops[j] == ncclProd)
+      if((run_types[i] == ncclFloat8e4m3 || run_types[i] == ncclFloat8e5m2) && run_ops[j] == ncclProd)
         continue;
 #endif
       for (int k=begin_root; k<=end_root; k++) {
