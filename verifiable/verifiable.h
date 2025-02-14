@@ -11,6 +11,12 @@
 #include <cuda_runtime.h>
 
 #include <stdint.h>
+#include <cstdlib>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <iostream>
+#include <unordered_map>
+#include <cstring>
 
 /* Routines for launching kernels that verify reduction results. A significant
  * feature of these routines is they carefully craft floating point input
@@ -63,4 +69,7 @@ void ncclVerifiableVerify(
   int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
   int64_t *bad_elt_n, cudaStream_t stream
 );
+
+#define TEST_FAIL 0
+#define TEST_SUCCESS 1
 #endif

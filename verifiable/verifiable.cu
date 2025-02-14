@@ -357,6 +357,17 @@ struct FloatLayout<rccl_bfloat8> {
   static constexpr int exponent_bits = 5, mantissa_bits = 2;
   static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
 };
+
+template<>
+struct FloatLayout<rccl_float8_fnuz> {
+  static constexpr int exponent_bits = 4, mantissa_bits = 3;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+};
+template<>
+struct FloatLayout<rccl_bfloat8_fnuz> {
+  static constexpr int exponent_bits = 5, mantissa_bits = 2;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+};
 #endif
 
 template<typename T>
@@ -890,8 +901,10 @@ void prepareInput1(
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(rccl_float8_fnuz);}
+  else { CASE_TY(rccl_float8);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(rccl_bfloat8_fnuz);}
+  else { CASE_TY(rccl_bfloat8);}
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -970,8 +983,10 @@ void prepareExpected1(
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
   #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(rccl_float8_fnuz);}
+  else { CASE_TY(rccl_float8);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(rccl_bfloat8_fnuz);}
+  else { CASE_TY(rccl_bfloat8);}
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
@@ -1044,8 +1059,8 @@ __host__ __device__ unsigned calcSumFloatTolerance(int rank_n, int elt_ty) {
     break;
   #endif
   #if HAVE_ncclfp8
-  case ncclFp8E4M3:
-  case ncclFp8E5M2:
+  case ncclFloat8e4m3:
+  case ncclFloat8e5m2:
     power = .91f;
     coef = .66f;
     break;
@@ -1175,8 +1190,8 @@ void ncclVerifiableVerify(
     floating |= elt_ty == ncclBfloat16;
   #endif
   #if HAVE_ncclfp8
-    floating |= elt_ty == ncclFp8E4M3;
-    floating |= elt_ty == ncclFp8E5M2;
+    floating |= elt_ty == ncclFloat8e4m3;
+    floating |= elt_ty == ncclFloat8e5m2;
   #endif
 
   unsigned tolerance = 0;
@@ -1207,8 +1222,8 @@ void ncclVerifiableVerify(
   case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
   #endif
   #if HAVE_ncclfp8
-  case ncclFp8E4M3: CASE_TY(rccl_float8, uint8_t)
-  case ncclFp8E5M2: CASE_TY(rccl_bfloat8, uint8_t)
+  case ncclFloat8e4m3: CASE_TY(rccl_float8, uint8_t)
+  case ncclFloat8e5m2: CASE_TY(rccl_bfloat8, uint8_t)
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
