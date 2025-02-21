@@ -44,17 +44,15 @@ def runCI =
 ci: { 
     String urlJobName = auxiliary.getTopJobName(env.BUILD_URL)
 
-    def propertyList = ["compute-rocm-dkms-no-npi":[pipelineTriggers([cron('0 1 * * 0')])], 
-                        "compute-rocm-dkms-no-npi-hipclang":[pipelineTriggers([cron('0 1 * * 0')])],
-                        "rocm-docker":[]]
+    def propertyList = [
+        "compute-rocm-dkms-no-npi-hipclang":[pipelineTriggers([cron('0 * * * 6')])]
+    ]
     propertyList = auxiliary.appendPropertyList(propertyList)
 
-    def jobNameList = ["compute-rocm-dkms-no-npi":([ubuntu16:['rccl906']]), 
-                       "rocm-docker":([ubuntu16:['rccl906']])]
-                       
-    jobNameList['compute-rocm-dkms-no-npi-hipclang'] = [ubuntu16:['rccl906']]
+    def jobNameList = [
+        "compute-rocm-dkms-no-npi-hipclang":([ubuntu16:['rccl906']])
+    ]
     jobNameList = auxiliary.appendJobNameList(jobNameList)
-    
     
     propertyList.each 
     {
@@ -75,7 +73,7 @@ ci: {
     // For url job names that are not listed by the jobNameList i.e. compute-rocm-dkms-no-npi-1901
     if(!jobNameList.keySet().contains(urlJobName))
     {
-        properties(auxiliary.addCommonProperties([pipelineTriggers([cron('0 1 * * *')])]))
+        properties(auxiliary.addCommonProperties([pipelineTriggers([cron('0 * * * 6')])]))
         stage(urlJobName) {
             runCI([ubuntu16:['rccl906']], urlJobName)
         }

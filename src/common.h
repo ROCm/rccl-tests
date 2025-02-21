@@ -18,6 +18,9 @@
 #include <pthread.h>
 #include "nccl1_compat.h"
 #include "timer.h"
+#include <string>
+#include <fstream>
+#include <iostream>
 
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
@@ -103,6 +106,26 @@ extern struct testColl broadcastTest;
 extern struct testColl reduceTest;
 extern struct testColl alltoAllTest;
 
+class Reporter {
+  public:
+    Reporter(std::string fileName, std::string outputFormat);
+    ~Reporter() { if (_outputValid) { _out.close(); } };
+    void setParameters(const char* name, const char* typeName, const char* opName);// {
+    void addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
+
+  private:
+    bool isMainThread();
+    template<typename T> std::pair<std::string, std::string> makeValueKeyPair(T v, std::string k) { return std::make_pair(std::to_string(v), k); };
+    template <> std::pair<std::string, std::string> makeValueKeyPair<std::string>(std::string v, std::string k) { return std::make_pair("\"" + v + "\"", k); };
+
+    bool _outputValid = false;
+    std::ofstream _out;
+    std::string _outputFormat;
+    std::string _collectiveName;
+    std::string _typeName;
+    std::string _opName;
+};
+
 struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
   testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
@@ -147,6 +170,8 @@ struct threadArgs {
   int reportErrors;
 
   struct testColl* collTest;
+
+  Reporter* reporter;
 };
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);

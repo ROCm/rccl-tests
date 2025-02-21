@@ -6,17 +6,19 @@ def runCompileCommand(platform, project, jobName)
     project.paths.construct_build_prefix()
 
     String hipclangArgs = jobName.contains('hipclang') ? '--hip-clang' : ''
-    def getRCCL = auxiliary.getLibrary('rccl',platform.jenkinsLabel,'develop')
 
     def command = """#!/usr/bin/env bash
                 set -x
-                ${getRCCL}
+                cd ${project.paths.build_prefix}
+                git clone --recursive https://github.com/ROCm/rccl.git
+                cd rccl
+                ./install.sh -l
+                cd ../..
                 ${auxiliary.exitIfNotSuccess()}
+                
                 cd ${project.paths.project_build_prefix}
-                cmake \
-                    -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
-                    -S . -B build
-                make -C build -j\$(nproc)
+                export RCCL_DIR=\$(pwd)/../rccl/build/release
+                ./install.sh --rccl_home \$RCCL_DIR
                 ${auxiliary.exitIfNotSuccess()}
             """
 
