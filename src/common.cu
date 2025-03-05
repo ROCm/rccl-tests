@@ -121,6 +121,7 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
       _out = std::ofstream(fileName, std::ios_base::out);
       _outputValid = true;
       if (_outputFormat == "csv") {
+        _out << "numCycle, ";
         _out << "collective, ";
 #ifdef MPI_SUPPORT
         _out << "ranks, rankspernode, gpusperrank, ";
@@ -133,10 +134,11 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
   }
 }
 
-void Reporter::setParameters(const char* name, const char* typeName, const char* opName) {
+void Reporter::setParameters(const size_t numCycle, const char* name, const char* typeName, const char* opName) {
   if (!isMainThread() || !_outputValid)
     return;
 
+  _numCycle = numCycle;
   _collectiveName = name;
   _typeName = typeName;
   _opName = opName;
@@ -150,6 +152,7 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
   std::string wrongEltsStr = (wrongElts == -1) ? "N/A" : std::to_string(wrongElts);
   int nodes = totalRanks / ranksPerNode;
 
+  outputValuesKeys.push_back(makeValueKeyPair(_numCycle, "numCycle"));
   outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
 #ifdef MPI_SUPPORT
   outputValuesKeys.push_back(makeValueKeyPair(nodes, "nodes"));
@@ -889,11 +892,10 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
 #endif
 
-  if (args->reporter) {
-    args->reporter->setParameters(args->collTest->name, typeName, opName);
-  }
-
   for (size_t iter = 0; iter < stress_cycles; iter++) {
+    if (args->reporter) {
+      args->reporter->setParameters(iter, args->collTest->name, typeName, opName);
+    }
     if (iter > 0) PRINT("# Testing %lu cycle.\n", iter+1);
     // Benchmark
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {

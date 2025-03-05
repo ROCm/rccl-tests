@@ -110,7 +110,7 @@ class Reporter {
   public:
     Reporter(std::string fileName, std::string outputFormat);
     ~Reporter() { if (_outputValid) { _out.close(); } };
-    void setParameters(const char* name, const char* typeName, const char* opName);// {
+    void setParameters(const size_t numCycle, const char* name, const char* typeName, const char* opName);// {
     void addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
 
   private:
@@ -121,6 +121,7 @@ class Reporter {
     bool _outputValid = false;
     std::ofstream _out;
     std::string _outputFormat;
+    size_t _numCycle = 0;
     std::string _collectiveName;
     std::string _typeName;
     std::string _opName;
