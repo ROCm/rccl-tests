@@ -90,7 +90,7 @@ testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t 
 
   for (int i=0; i<type_count; i++) {
     for (int j=0; j<op_count; j++) {
-      if((i == ncclFp8E4M3 || i == ncclFp8E5M2) && j == ncclProd)
+      if((run_types[i] == ncclFp8E4M3 || run_types[i] == ncclFp8E5M2) && j == ncclProd)
         continue;
       TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], -1));
     }

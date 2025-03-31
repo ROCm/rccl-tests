@@ -69,6 +69,10 @@ testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, ncclDataTyp
   ncclRedOp_t *run_ops;
   const char **run_typenames, **run_opnames;
   int type_count, op_count;
+#if defined(RCCL_FLOAT8)
+  if((type == ncclFp8E4M3 || type == ncclFp8E5M2) && op == ncclProd)
+    return testSuccess;
+#endif
 
   if ((int)type != -1) {
     type_count = 1;
@@ -92,6 +96,10 @@ testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, ncclDataTyp
 
   for (int i=0; i<type_count; i++) {
     for (int j=0; j<op_count; j++) {
+#if defined(RCCL_FLOAT8)
+      if((run_types[i] == ncclFp8E4M3 || run_types[i] == ncclFp8E5M2) && j == ncclProd)
+        continue;
+#endif
       TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], -1));
     }
   }

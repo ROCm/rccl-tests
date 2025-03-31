@@ -65,6 +65,10 @@ testResult_t ReduceRunTest(struct threadArgs* args, int root, ncclDataType_t typ
   const char **run_typenames, **run_opnames;
   int type_count, op_count;
   int begin_root, end_root;
+  #if defined(RCCL_FLOAT8)
+  if((type == ncclFp8E4M3 || type == ncclFp8E5M2) && op == ncclProd)
+    return testSuccess;
+  #endif
 
   if ((int)type != -1) {
     type_count = 1;
@@ -95,6 +99,10 @@ testResult_t ReduceRunTest(struct threadArgs* args, int root, ncclDataType_t typ
 
   for (int i=0; i<type_count; i++) {
     for (int j=0; j<op_count; j++) {
+#if defined(RCCL_FLOAT8)
+      if((run_types[i] == ncclFp8E4M3 || run_types[i] == ncclFp8E5M2) && j == ncclProd)
+        continue;
+#endif
       for (int k=begin_root; k<=end_root; k++) {
         TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], k));
       }
