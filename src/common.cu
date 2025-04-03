@@ -109,6 +109,7 @@ static int average = 1;
 static int numDevices = 1;
 static int delay_inout_place = 0;
 static int enable_out_of_place = 1;
+static int enable_in_place = 1;
 static int enable_cache_flush = 0;
 static int enable_rotating_tensor = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
@@ -905,7 +906,8 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
           TESTCHECK(BenchTime(args, type, op, root, 0));
           usleep(delay_inout_place);
         }
-        TESTCHECK(BenchTime(args, type, op, root, 1));
+        if (enable_in_place)
+          TESTCHECK(BenchTime(args, type, op, root, 1));
         PRINT("\n");
     }
   }
@@ -1178,6 +1180,7 @@ int main(int argc, char* argv[]) {
         break;
       case 'O':
         enable_out_of_place = strtol(optarg, NULL, 0);
+        enable_in_place = enable_out_of_place ? 0 : 1;
         break;
       case 'F':
         enable_cache_flush = strtol(optarg, NULL, 0);
@@ -1438,14 +1441,20 @@ testResult_t run() {
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  if (enable_out_of_place) {
+  if (enable_out_of_place && enable_in_place) {
   	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
   	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
       	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
   	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
       	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  } else if (enable_out_of_place) {
+	  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place      \n", "", "", "", "", "");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+        timeStr, "algbw", "busbw", "#wrong");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+        "(us)", "(GB/s)", "(GB/s)", "");
   } else {
-	PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+    PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
         timeStr, "algbw", "busbw", "#wrong");
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
@@ -1477,6 +1486,7 @@ testResult_t run() {
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams+t*nGpus;
     threads[t].args.enable_out_of_place=enable_out_of_place;
+    threads[t].args.enable_in_place=enable_in_place;
     threads[t].args.enable_cache_flush = enable_cache_flush;
     threads[t].args.enable_rotating_tensor = enable_rotating_tensor;
     threads[t].args.errors=errors+t;
