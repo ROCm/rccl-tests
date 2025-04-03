@@ -361,12 +361,12 @@ struct FloatLayout<rccl_bfloat8> {
 template<>
 struct FloatLayout<rccl_float8_fnuz> {
   static constexpr int exponent_bits = 4, mantissa_bits = 3;
-  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
 };
 template<>
 struct FloatLayout<rccl_bfloat8_fnuz> {
   static constexpr int exponent_bits = 5, mantissa_bits = 2;
-  static constexpr int exponent_bias = (1<<(exponent_bits-1))-1;
+  static constexpr int exponent_bias = (1<<(exponent_bits-1));
 };
 #endif
 
@@ -1222,8 +1222,10 @@ void ncclVerifiableVerify(
   case ncclBfloat16: CASE_TY(hip_bfloat16, uint16_t)
   #endif
   #if HAVE_ncclfp8
-  case ncclFloat8e4m3: CASE_TY(rccl_float8, uint8_t)
-  case ncclFloat8e5m2: CASE_TY(rccl_bfloat8, uint8_t)
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(rccl_float8_fnuz, uint8_t);}
+  else { CASE_TY(rccl_float8, uint8_t);}
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(rccl_bfloat8_fnuz, uint8_t);}
+  else { CASE_TY(rccl_bfloat8, uint8_t);}
   #endif
   case ncclFloat32: CASE_TY(float, uint32_t)
   case ncclFloat64: CASE_TY(double, uint64_t)
