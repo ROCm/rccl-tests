@@ -157,6 +157,7 @@ struct threadArgs {
   int* gpus;
   int localRank;
   int enable_out_of_place;
+  int enable_in_place;
   int enable_cache_flush;
   int enable_rotating_tensor;
   void** sendbuffs;

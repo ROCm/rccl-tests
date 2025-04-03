@@ -111,6 +111,7 @@ static int average = 1;
 static int numDevices = 1;
 static int delay_inout_place = 0;
 static int enable_out_of_place = 1;
+static int enable_in_place = 1;
 static int enable_cache_flush = 0;
 static int enable_rotating_tensor = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
@@ -410,7 +411,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   int64_t *wrongPerGpu = nullptr;
   CUDACHECK(hipHostMalloc((void**)&wrongPerGpu, args->nGpus*sizeof(int64_t), cudaHostAllocMapped));
-  
+
   for (int i=0; i<args->nGpus; i++) {
     int rank = ((args->proc*args->nThreads + args->thread)*args->nGpus + i);
     CUDACHECK(cudaSetDevice(args->gpus[i]));
@@ -450,14 +451,14 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (args->reportErrors && *wrongElts) args->errors[0]++;
   return testSuccess;
 }
-    
+
 testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t* comms) {
   cudaError_t cudaErr;
   int remaining = ngpus;
   int* done = (int*)malloc(sizeof(int)*ngpus);
   memset(done, 0, sizeof(int)*ngpus);
   timer tim;
-  
+
   while (remaining) {
    int idle = 1;
    for (int i=0; i<ngpus; i++) {
@@ -522,7 +523,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     size_t steps = totalnbytes ? args->maxbytes / totalnbytes : 1;
     shift = totalnbytes * (iter % steps);
   }
-  
+
   if (args->nGpus > 1) NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; i++) {
 #ifndef NCCL_MAJOR
@@ -912,7 +913,8 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         TESTCHECK(BenchTime(args, type, op, root, 0));
         usleep(delay_inout_place);
       }
-      TESTCHECK(BenchTime(args, type, op, root, 1));
+        if (enable_in_place)
+        TESTCHECK(BenchTime(args, type, op, root, 1));
       PRINT("\n");
     }
     --repeat;
@@ -1209,6 +1211,7 @@ int main(int argc, char* argv[]) {
         break;
       case 'q':
         delay_inout_place = (int)strtol(optarg, NULL, 10);
+        enable_in_place = enable_out_of_place ? 0 : 1;
 	break;
       case 'F':
         enable_cache_flush = strtol(optarg, NULL, 0);
@@ -1500,14 +1503,20 @@ testResult_t run() {
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  if (enable_out_of_place) {
+  if (enable_out_of_place && enable_in_place) {
   	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
   	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
       	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
   	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
       	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
+  } else if (enable_out_of_place) {
+	  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place      \n", "", "", "", "", "");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+        timeStr, "algbw", "busbw", "#wrong");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+        "(us)", "(GB/s)", "(GB/s)", "");
   } else {
-	PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+    PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
         timeStr, "algbw", "busbw", "#wrong");
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
@@ -1539,6 +1548,7 @@ testResult_t run() {
     threads[t].args.comms=comms+t*nGpus;
     threads[t].args.streams=streams.data()+t*nGpus;
     threads[t].args.enable_out_of_place=enable_out_of_place;
+    threads[t].args.enable_in_place=enable_in_place;
     threads[t].args.enable_cache_flush = enable_cache_flush;
     threads[t].args.enable_rotating_tensor = enable_rotating_tensor;
     threads[t].args.errors=errors.data()+t;
