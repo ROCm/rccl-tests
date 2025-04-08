@@ -36,7 +36,7 @@ size_t cache_bytes = 192 * 1024 * 1024; // Use 192MB
     , ncclBfloat16
   #endif
   #if RCCL_FLOAT8 == 1
-    , ncclFp8E4M3, ncclFp8E5M2
+    , ncclFloat8e4m3, ncclFloat8e5m2
   #endif
   };
   const char *test_typenames[ncclNumTypes] = {
@@ -557,8 +557,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<hip_bfloat16>(rank); break;
       #endif
       #if defined(RCCL_FLOAT8)
-      case ncclFp8E4M3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;
-      case ncclFp8E5M2: fp8_e5m2 = ncclVerifiablePremulScalar<rccl_bfloat8>(rank); break;
+      case ncclFloat8e4m3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;
+      case ncclFloat8e5m2: fp8_e5m2 = ncclVerifiablePremulScalar<rccl_bfloat8>(rank); break;
       #endif
       case ncclNumTypes: break;
       }
