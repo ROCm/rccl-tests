@@ -61,7 +61,7 @@ See the [Performance](doc/PERFORMANCE.md) page for explanation about numbers, an
 
 ### Environment variables
 On some older versions of ROCm before 6.4.0, setting `HSA_NO_SCRATCH_RECLAIM=1`
- as part of the environment may be necessary to achieve better performance.  When running without MPI, something like the following is enough:
+ as part of the environment might be necessary to achieve better performance.  When running without MPI, a command similar to the following one should be sufficient:
 ```shell
 HSA_NO_SCRATCH_RECLAIM=1 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 8
 ```
