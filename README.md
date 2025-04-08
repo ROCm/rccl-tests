@@ -66,7 +66,7 @@ On some older versions of ROCm before 6.4.0, setting `HSA_NO_SCRATCH_RECLAIM=1`
 HSA_NO_SCRATCH_RECLAIM=1 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 8
 ```
 
-For MPI, you may need to do something like the following:
+For MPI, you might need to use a command similar to the following:
 ```shell
 mpirun.mpich -np 8 -env NCCL_DEBUG=VERSION -env HSA_NO_SCRATCH_RECLAIM=1 ./build/all_reduce_perf -b 8M -e 128M -i 8388608 -g 1 -d bfloat16
 ```
