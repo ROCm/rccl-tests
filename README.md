@@ -59,6 +59,18 @@ Running with 1 MPI process per GPU ensures a 1:1 mapping for CPUs and GPUs, whic
 
 See the [Performance](doc/PERFORMANCE.md) page for explanation about numbers, and in particular the "busbw" column.
 
+### Environment variables
+On some older versions of ROCm before 6.4.0, setting HSA_NO_SCRATCH_RECLAIM=1
+ as part of the environment may be necessary to achieve better performance.  When running without MPI, something like the following is enough:
+```shell
+HSA_NO_SCRATCH_RECLAIM=1 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 8
+```
+
+For MPI, you may need to do something like the following:
+```shell
+mpirun.mpich -np 8 -env NCCL_DEBUG=VERSION -env HSA_NO_SCRATCH_RECLAIM=1 ./build/all_reduce_perf -b 8M -e 128M -i 8388608 -g 1 -d bfloat16
+```
+
 ### Arguments
 
 All tests support the same set of arguments :
