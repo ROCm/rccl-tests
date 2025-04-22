@@ -760,12 +760,12 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
   }
 
+  auto largestMessageSize = std::max(args->sendBytes, args->expectedBytes);
   if (args->reporter) {
     if (args->reportErrors) {
-      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw, wrongElts);
-    }
-    else {
-      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, args->expectedBytes, in_place, timeUsec, algBw, busBw);
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, largestMessageSize, in_place, timeUsec, algBw, busBw, wrongElts);
+    } else {
+      args->reporter->addResult((args->nThreads * args->nGpus), args->nProcs, args->totalProcs, largestMessageSize, in_place, timeUsec, algBw, busBw);
     }
   }
 
