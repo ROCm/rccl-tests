@@ -203,6 +203,8 @@ set(ROCM_USE_DEV_COMPONENT OFF)  # This repo doesn't have a dev component
 # Add all of the tests
 add_subdirectory(src)
 
+rocm_setup_version(VERSION "2.14.1")
+
 # Create ROCm standard packages
 rocm_create_package(
     NAME rccl-tests
