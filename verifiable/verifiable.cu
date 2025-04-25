@@ -23,6 +23,11 @@
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && RCCL_FLOAT8 == 1
   #define HAVE_ncclfp8 1
+  // Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
+  #if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
+    #define ncclFp8E4M3 ncclFloat8e4m3
+    #define ncclFp8E5M2 ncclFloat8e5m2
+  #endif
 #else
   #define HAVE_ncclfp8 0
 #endif

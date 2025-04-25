@@ -22,6 +22,12 @@
 #include <fstream>
 #include <iostream>
 
+// Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
+  #define ncclFp8E4M3 ncclFloat8e4m3
+  #define ncclFp8E5M2 ncclFloat8e5m2
+#endif
+
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
 
