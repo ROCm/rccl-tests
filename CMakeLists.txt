@@ -124,9 +124,6 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-##Adding pthread flag for linking
-#set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-
 ## Check for HIP
 find_package(hip REQUIRED)
 message(STATUS "HIP compiler:     ${HIP_COMPILER}")
