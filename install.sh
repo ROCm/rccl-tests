@@ -11,6 +11,7 @@ function display_help()
     echo "    [-h|--help] Prints this help message."
     echo "    [-m|--mpi] Build RCCL-tests with MPI support. (see --mpi_home below.)"
     echo "    [-t|--test] Run unit-tests after building RCCL-Tests."
+    echo "    [--rocm_home] Specify custom path for ROCm installation (default: /opt/rocm)"
     echo "    [--rccl_home] Specify custom path for RCCL installation (default: /opt/rocm)"
     echo "    [--mpi_home] Specify path to your MPI installation."
     echo "    [--hip_compiler] Specify path to HIP compiler (default: /opt/rocm/bin/amdclang++)"
@@ -23,10 +24,12 @@ function display_help()
 run_tests=false
 build_release=true
 mpi_enabled=false
-rccl_dir=/opt/rocm
+rocm_dir=/opt/rocm
+rccl_dir=${rocm_dir}
 mpi_dir=""
-hip_compiler=/opt/rocm/bin/amdclang++
+hip_compiler=${rocm_dir}/bin/amdclang++
 gpu_targets=""
+
 # #################################################
 # Parameter parsing
 # #################################################
@@ -34,7 +37,7 @@ gpu_targets=""
 # check if we have a modern version of getopt that can handle whitespace and long parameters
 getopt -T
 if [[ $? -eq 4 ]]; then
-    GETOPT_PARSE=$(getopt --name "${0}" --longoptions help,mpi,test,rccl_home:,mpi_home:,hip_compiler:,gpu_targets: --options hmt -- "$@")
+    GETOPT_PARSE=$(getopt --name "${0}" --longoptions help,mpi,test,rocm_home:,rccl_home:,mpi_home:,hip_compiler:,gpu_targets: --options hmt -- "$@")
 else
     echo "Need a new version of getopt"
     exit 1
@@ -49,34 +52,35 @@ eval set -- "${GETOPT_PARSE}"
 
 while true; do
     case "${1}" in
-	-h|--help)
-        display_help
-        exit 0
-        ;;
-	-m|--mpi)
-	    mpi_enabled=true
-	    shift ;;
-	-t|--test)
-	    run_tests=true
-	    shift ;;
-    --rccl_home)
-        rccl_dir=${2}
-        shift 2 ;;
-    --mpi_home)
-        mpi_dir=${2}
-        shift 2 ;;
-    --hip_compiler)
-        hip_compiler=${2}
-        shift 2 ;;
-    --gpu_targets)
-        gpu_targets=${2}
-        shift 2 ;;
-	--) shift ; break ;;
-	*)  echo "Unexpected command line parameter received; aborting";
-	    exit 1
-	    ;;
+        -h|--help)
+            display_help
+            exit 0 ;;
+        -m|--mpi)
+            mpi_enabled=true
+            shift ;;
+        -t|--test)
+            run_tests=true
+            shift ;;
+        --rocm_home)
+            rocm_dir=${2}
+            shift 2 ;;
+        --rccl_home)
+            rccl_dir=${2}
+            shift 2 ;;
+        --mpi_home)
+            mpi_dir=${2}
+            shift 2 ;;
+        --hip_compiler)
+            hip_compiler=${2}
+            shift 2 ;;
+        --gpu_targets)
+            gpu_targets=${2}
+            shift 2 ;;
+        --) shift ; break ;;
+        *)  echo "Unexpected command line parameter received; aborting";
+	    exit 1 ;;
     esac
-    done
+done
 
 # throw error code after running a command in the install script
 check_exit_code( )
@@ -99,12 +103,12 @@ rm -rf ${build_dir}
 if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
     echo "HIP Compiler does not exist at ${hip_compiler}. Please check the path."
     echo "Defaulting to /opt/rocm/bin/amdclang++"
-    hip_compiler=/opt/rocm/bin/amdclang++
+    hip_compiler=${rocm_dir}/bin/amdclang++
 
     if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
         echo "${hip_compiler} does not exist. Please be advised."
 	echo "Defaulting to /opt/rocm/bin/hipcc"
-	hip_compiler=/opt/rocm/bin/hipcc
+	hip_compiler=${rocm_dir}/bin/hipcc
 
 	if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
             echo "${hip_compiler} does not exist!. Please check your ROCm installation."
@@ -114,15 +118,19 @@ if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
     fi
 fi
 
+if [[ -n ${gpu_targets} ]]; then
+    GPU_TARGETS="GPU_TARGETS=${gpu_targets}"
+fi
+
 if ($mpi_enabled); then
     if [[ ${mpi_dir} == "" ]]; then
         echo "MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument."
         exit 1
     else
-        make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so MPI=1 MPI_HOME=${mpi_dir} HIPCC=${hip_compiler} GPU_TARGETS=${gpu_targets} -j$(nproc)
+        make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so MPI=1 MPI_HOME=${mpi_dir} HIPCC=${hip_compiler} ${GPU_TARGETS} -j$(nproc)
     fi
 else
-    make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so HIP_COMPILER=${hip_compiler} GPU_TARGETS=${gpu_targets} -j$(nproc)
+    make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so HIP_COMPILER=${hip_compiler} ${GPU_TARGETS} -j$(nproc)
 fi
 check_exit_code "$?"
 
