@@ -24,7 +24,7 @@ function display_help()
 run_tests=false
 build_release=true
 mpi_enabled=false
-rocm_dir=/opt/rocm
+rocm_dir=${ROCM_PATH}
 rccl_dir=${rocm_dir}
 mpi_dir=""
 hip_compiler=${rocm_dir}/bin/amdclang++
@@ -99,6 +99,11 @@ build_dir=./build
 # #################################################
 # ensure a clean build environment
 rm -rf ${build_dir}
+
+if [[ -n ${rocm_dir} ]]; then
+    echo "ROCM_PATH does not exist at ${rocm_dir}. Defaulting to /opt/rocm"
+    rocm_dir=/opt/rocm
+fi
 
 if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
     echo "HIP Compiler does not exist at ${hip_compiler}. Please check the path."
