@@ -26,11 +26,11 @@
   #define HAVE_ncclfp8_DEVICE 1
 #else
   #define HAVE_ncclfp8_HOST 1
-  // Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
-  // #if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
-  //   #define ncclFp8E4M3 ncclFloat8e4m3
-  //   #define ncclFp8E5M2 ncclFloat8e5m2
-  // #endif
+#endif
+// Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
+  #define ncclFp8E4M3 ncclFloat8e4m3
+  #define ncclFp8E5M2 ncclFloat8e5m2
 #endif
 #else
   #define HAVE_ncclfp8 0
@@ -215,16 +215,16 @@ struct ReduceProd {
   #endif
   #if RCCL_FLOAT8 == 1
   __host__ __device__ rccl_float8 operator()(rccl_float8 a, rccl_float8 b) const {
-      return static_cast<rccl_float8>(a * b);
+      return static_cast<rccl_float8>(float(a) * float(b));
   }
   __host__ __device__ rccl_float8 operator()(rccl_float8 a, float b) const {
-      return static_cast<rccl_float8>(a * b);
+      return static_cast<rccl_float8>(float(a) * float(b));
   }
   __host__ __device__ rccl_bfloat8 operator()(rccl_bfloat8 a, rccl_bfloat8 b) const {
-      return static_cast<rccl_bfloat8>(a * b);
+      return static_cast<rccl_bfloat8>(float(a) * float(b));
   }
   __host__ __device__ rccl_bfloat8 operator()(rccl_bfloat8 a, float b) const {
-      return static_cast<rccl_bfloat8>(a * b);
+      return static_cast<rccl_bfloat8>(float(a) * float(b));
   }
   #endif
   template<typename T>

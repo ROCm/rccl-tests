@@ -66,25 +66,6 @@ inline std::ostream& operator<<(std::ostream& os, const rccl_bfloat8& bf8)
     return os << float(bf8);
 }
 
-inline __host__ __device__ float operator*(rccl_float8 a, rccl_float8 b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(rccl_bfloat8 a, rccl_bfloat8 b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(rccl_float8 a, float b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(rccl_bfloat8 a, float b)
-{
-    return float(a) * float(b);
-}
 #else
 inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e4m3& f8)
 {
@@ -96,26 +77,6 @@ inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e5m2& bf8)
     return os << float(bf8);
 }
 
-inline __host__ __device__ float operator*(__hip_fp8_e4m3 a, __hip_fp8_e4m3 b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e5m2 a, __hip_fp8_e5m2 b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e4m3 a, float b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e5m2 a, float b)
-{
-    return float(a) * float(b);
-}
-
 //adding support for those operators on the host side
 inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e4m3_fnuz& f8)
 {
@@ -125,26 +86,6 @@ inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e4m3_fnuz& f8)
 inline std::ostream& operator<<(std::ostream& os, const __hip_fp8_e5m2_fnuz& bf8)
 {
     return os << float(bf8);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e4m3_fnuz a, __hip_fp8_e4m3_fnuz b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e5m2_fnuz a, __hip_fp8_e5m2_fnuz b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e4m3_fnuz a, float b)
-{
-    return float(a) * float(b);
-}
-
-inline __host__ __device__ float operator*(__hip_fp8_e5m2_fnuz a, float b)
-{
-    return float(a) * float(b);
 }
 #endif
 

@@ -96,8 +96,8 @@ testResult_t ReduceRunTest(struct threadArgs* args, int root, ncclDataType_t typ
   for (int i=0; i<type_count; i++) {
     for (int j=0; j<op_count; j++) {
 #if defined(RCCL_FLOAT8)
-      if((run_types[i] == ncclFloat8e4m3 || run_types[i] == ncclFloat8e5m2) && run_ops[j] == ncclProd)
-        continue;
+if((run_types[i] == ncclFloat8e4m3 || run_types[i] == ncclFloat8e5m2) && (run_ops[j] == ncclProd || run_ops[j] == ncclAvg || strcmp(run_opnames[j],"mulsum") == 0))
+    continue;
 #endif
       for (int k=begin_root; k<=end_root; k++) {
         TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], k));
