@@ -203,6 +203,7 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
 }
 
 bool Reporter::isMainThread() { return is_main_thread == 1; }
+static int minCudaArch = 1<<30;
 
 #define NUM_BLOCKS 32
 
@@ -311,18 +312,18 @@ static bool minReqVersion(int rmajor, int rminor, int rpatch)
 }
 
 testResult_t CheckDelta(void* results, void* expected, size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int64_t *wrongEltN) {
-  ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, cudaStreamDefault);
+  CUDACHECK(ncclVerifiableVerify(results, expected, count, (int)type, (int)op, nranks, seed, offset, wrongEltN, cudaStreamDefault));
   CUDACHECK(cudaDeviceSynchronize());
   return testSuccess;
 }
 
 testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks) {
-  ncclVerifiablePrepareExpected(data, count, (int)type, (int)op, nranks, seed, offset, cudaStreamDefault);
+  CUDACHECK(ncclVerifiablePrepareExpected(data, count, (int)type, (int)op, nranks, seed, offset, cudaStreamDefault));
   return testSuccess;
 }
 
 testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int rank) {
-  ncclVerifiablePrepareInput(data, count, (int)type, (int)op, nranks, rank, seed, offset, cudaStreamDefault);
+  CUDACHECK(ncclVerifiablePrepareInput(data, count, (int)type, (int)op, nranks, rank, seed, offset, cudaStreamDefault));
   return testSuccess;
 }
 
@@ -1470,12 +1471,21 @@ testResult_t run() {
     gpus[i] = ((gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i)%numDevices;
     CUDACHECK(cudaSetDevice(gpus[i]));
     TESTCHECK(AllocateBuffs(sendbuffs.data()+i, sendBytes, recvbuffs.data()+i, recvBytes, expected.data()+i, (size_t)maxBytes));
-    if (streamnull)
+    if (streamnull) {
       streams[i] = NULL;
-    else
+    }
+    else {
       CUDACHECK(cudaStreamCreateWithFlags(streams.data()+i, cudaStreamNonBlocking));
+    }
+    int archMajor, archMinor;
+    CUDACHECK(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, gpus[i]));
+    CUDACHECK(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, gpus[i]));
+    minCudaArch = std::min(minCudaArch, 100*archMajor + 10*archMinor);
   }
 
+#ifdef MPI_SUPPORT
+  MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
