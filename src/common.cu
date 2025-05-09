@@ -1208,11 +1208,11 @@ int main(int argc, char* argv[]) {
 	break;
       case 'O':
         enable_out_of_place = strtol(optarg, NULL, 0);
+        enable_in_place = enable_out_of_place ? 0 : 1;
         break;
       case 'q':
         delay_inout_place = (int)strtol(optarg, NULL, 10);
-        enable_in_place = enable_out_of_place ? 0 : 1;
-	break;
+      	break;
       case 'F':
         enable_cache_flush = strtol(optarg, NULL, 0);
         if (enable_cache_flush > 0) {
