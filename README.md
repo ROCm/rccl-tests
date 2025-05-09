@@ -139,9 +139,9 @@ All tests support the same set of arguments :
   * `-G,--hipgraph <num graph launches>` Capture iterations as a HIP graph and then replay specified number of times. Default : 0.
   * `-C,--report_cputime <0/1>]` Report CPU time instead of latency. Default : 0.
   * `-R,--local_register <1/0>` enable local buffer registration on send/recv buffers. Default : 0.
-  * `-T,--timeout <time in seconds>` timeout each test after specified number of seconds. Default : disabled.
+  * `-T,--timeout <time in seconds>` timeout each test after specified number of seconds. Default: disabled.
   * `-F,--cache_flush <cache flush after every -F iteration>` Enable cache flush after every -F iteration. Default : 0 (No cache flush).
-  * `-O,--out_of_place <0=in-place only, 1=out-of-place only>` . Default: both.
+  * `-O,--out_of_place <0=in-place only, 1=out-of-place only>`. Default: both.
   * `-q,--delay <delay>` Delay between out-of-place and in-place runs (in microseconds). Default: 10.
 * Parsing RCCL-Tests output
   * `-Z,--output_format <csv|json>` Parse RCCL-Tests output as a CSV or JSON. Default : disabled.
