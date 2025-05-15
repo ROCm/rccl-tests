@@ -22,7 +22,7 @@
 #include <fstream>
 #include <iostream>
 
-// Ensures backward compatibility for FP8 types
+// Ensures backward compatibility for FP8 datatypes
 #if NCCL_VERSION_CODE < NCCL_VERSION(2,24,3)
   #define ncclFloat8e4m3 ncclFp8E4M3
   #define ncclFloat8e5m2 ncclFp8E5M2

@@ -27,7 +27,7 @@
 #else
   #define HAVE_ncclfp8_HOST 1
 #endif
-// Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
+// Ensures backward compatibility for FP8 datatypes
 #if NCCL_VERSION_CODE < NCCL_VERSION(2,24,3)
   #define ncclFloat8e4m3 ncclFp8E4M3
   #define ncclFloat8e5m2 ncclFp8E5M2
