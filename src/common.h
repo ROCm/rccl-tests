@@ -22,10 +22,10 @@
 #include <fstream>
 #include <iostream>
 
-// Ensures backward compatibility for FP8 types in RCCL 2.24.3 and later
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,24,3)
-  #define ncclFp8E4M3 ncclFloat8e4m3
-  #define ncclFp8E5M2 ncclFloat8e5m2
+// Ensures backward compatibility for FP8 types
+#if NCCL_VERSION_CODE < NCCL_VERSION(2,24,3)
+  #define ncclFloat8e4m3 ncclFp8E4M3
+  #define ncclFloat8e5m2 ncclFp8E5M2
 #endif
 
 // For nccl.h < 2.13 since we define a weak fallback
