@@ -28,41 +28,25 @@
 # GIT
 
 # Test dependencies
-
+include(FetchContent)
 
 # Find or download/install rocm-cmake project
-set(PROJECT_EXTERN_DIR ${CMAKE_CURRENT_BINARY_DIR}/extern)
-find_package(ROCmCMakeBuildTools 0.7.3 QUIET CONFIG PATHS "${ROCM_PATH}")
+find_package(ROCmCMakeBuildTools 0.11.0 CONFIG QUIET PATHS "${ROCM_PATH}")
 if(NOT ROCmCMakeBuildTools_FOUND)
-    set(rocm_cmake_tag "master" CACHE STRING "rocm-cmake tag to download")
-    file(
-        DOWNLOAD https://github.com/ROCm/rocm-cmake/archive/${rocm_cmake_tag}.zip
-        ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}.zip
-        STATUS rocm_cmake_download_status LOG rocm_cmake_download_log
-    )
-    list(GET rocm_cmake_download_status 0 rocm_cmake_download_error_code)
-    if(rocm_cmake_download_error_code)
-        message(FATAL_ERROR "Error: downloading "
-            "https://github.com/ROCm/rocm-cmake/archive/${rocm_cmake_tag}.zip failed "
-            "error_code: ${rocm_cmake_download_error_code} "
-            "log: ${rocm_cmake_download_log} "
+    find_package(ROCM 0.7.3 CONFIG QUIET PATHS "${ROCM_PATH}") # deprecated fallback
+    if(NOT ROCM_FOUND)
+        message(STATUS "ROCmCMakeBuildTools not found. Fetching...")
+        set(PROJECT_EXTERN_DIR ${CMAKE_CURRENT_BINARY_DIR}/extern)
+        set(rocm_cmake_tag "rocm-6.4.0" CACHE STRING "rocm-cmake tag to download")
+        FetchContent_Declare(
+            rocm-cmake
+            GIT_REPOSITORY https://github.com/ROCm/rocm-cmake.git
+            GIT_TAG ${rocm_cmake_tag}
+            SOURCE_SUBDIR "DISABLE ADDING TO BUILD"
         )
+        FetchContent_MakeAvailable(rocm-cmake)
+        find_package(ROCmCMakeBuildTools CONFIG REQUIRED NO_DEFAULT_PATH PATHS "${rocm-cmake_SOURCE_DIR}")
     endif()
-
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E tar xzf ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag}.zip
-        WORKING_DIRECTORY ${PROJECT_EXTERN_DIR}
-        RESULT_VARIABLE rocm_cmake_unpack_error_code
-    )
-    execute_process( COMMAND ${CMAKE_COMMAND} -DCMAKE_INSTALL_PREFIX=${PROJECT_EXTERN_DIR}/rocm-cmake .
-      WORKING_DIRECTORY ${PROJECT_EXTERN_DIR}/rocm-cmake-${rocm_cmake_tag} )
-    execute_process( COMMAND ${CMAKE_COMMAND} --build rocm-cmake-${rocm_cmake_tag} --target install
-      WORKING_DIRECTORY ${PROJECT_EXTERN_DIR})
-
-    if(rocm_cmake_unpack_error_code)
-        message(FATAL_ERROR "Error: unpacking ${CMAKE_CURRENT_BINARY_DIR}/rocm-cmake-${rocm_cmake_tag}.zip failed")
-    endif()
-    find_package(ROCmCMakeBuildTools 0.7.3 REQUIRED CONFIG PATHS ${PROJECT_EXTERN_DIR}/rocm-cmake )
 endif()
 
 # Find available local ROCM targets

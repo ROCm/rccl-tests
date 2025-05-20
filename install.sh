@@ -100,7 +100,7 @@ build_dir=./build
 # ensure a clean build environment
 rm -rf ${build_dir}
 
-if [[ -n ${rocm_dir} ]]; then
+if [[ -z ${rocm_dir} ]]; then
     echo "ROCM_PATH does not exist at ${rocm_dir}. Defaulting to /opt/rocm"
     rocm_dir=/opt/rocm
 fi
