@@ -123,7 +123,7 @@ HIPLDFLAGS += $(LIBRARIES:%=-l%)
 DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv hypercube
+BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv hypercube all_reduce_bias
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
 
 GIT_VERSION_FILE := ${DST_DIR}/src/git_version.cpp

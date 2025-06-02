@@ -63,4 +63,10 @@ hipError_t ncclVerifiableVerify(
   int red_op, int rank_n, uint64_t seed, intptr_t elt_ix0,
   int64_t *bad_elt_n, cudaStream_t stream
 );
+
+// Enqueue kernel that applies bias to expected results
+void ncclVerifiableApplyBias(
+    void *elts, void* bias, intptr_t elt_n, int elt_ty, int red_op, intptr_t elt_ix0,
+    cudaStream_t stream
+);
 #endif

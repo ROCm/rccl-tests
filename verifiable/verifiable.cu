@@ -1040,6 +1040,76 @@ hipError_t ncclVerifiablePrepareInput(
   }
   #undef CASE_OP
 }
+
+namespace {
+template<typename T, typename ReduceFn>
+__global__ void applyBias2(
+    T *elts, T *bias, intptr_t elt_n, ReduceFn op, intptr_t elt_ix0
+  ) {
+  intptr_t i0 = blockIdx.x*(elt_n/gridDim.x);
+  i0 += blockIdx.x < elt_n%gridDim.x ? blockIdx.x : elt_n%gridDim.x;
+  intptr_t i1 = (blockIdx.x+1)*(elt_n/gridDim.x);
+  i1 += blockIdx.x+1 < elt_n%gridDim.x ? blockIdx.x+1 : elt_n%gridDim.x;
+  intptr_t i = i0 + threadIdx.x;
+  while(i < i1) {
+    elts[i] = op(elts[i], bias[i]);
+    #if 0
+    T output = genOutput<T>(op, rank_n, seed, elt_ix0+i);
+    printf("prepareInput2 T=%d seed=0x%llx r=%d ix=%lld x=%g output=%g elts=%p\n",
+      std::is_same<T,int>::value, (long long)seed, int(rank_me), (long long)i, (float)elts[i], (float)output, elts);
+    #endif
+    i += blockDim.x;
+  }
+}
+
+template<typename ReduceOp>
+void applyBias1(
+    void *elts, void* bias, intptr_t elt_n, int elt_ty, ReduceOp op,
+    intptr_t elt_ix0, cudaStream_t stream
+  ) {
+  int block_n = std::min<intptr_t>(32, (elt_n + 4*512-1)/(4*512));
+  #define CASE_TY(T) applyBias2<<<block_n, 512, 0, stream>>>((T*)elts, (T*)bias, elt_n, op, elt_ix0); break;
+  switch(elt_ty) {
+  case ncclInt8: CASE_TY(int8_t)
+  case ncclUint8: CASE_TY(uint8_t)
+  case ncclInt32: CASE_TY(int32_t)
+  case ncclUint32: CASE_TY(uint32_t)
+  case ncclInt64: CASE_TY(int64_t)
+  case ncclUint64: CASE_TY(uint64_t)
+  case ncclFloat16: CASE_TY(__half)
+  #if HAVE_ncclBfloat16
+  case ncclBfloat16: CASE_TY(hip_bfloat16)
+  #endif
+  #if HAVE_ncclfp8
+  case ncclFp8E4M3: CASE_TY(rccl_float8)
+  case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  #endif
+  case ncclFloat32: CASE_TY(float)
+  case ncclFloat64: CASE_TY(double)
+  default: assert(0);
+  }
+  #undef CASE_TY
+}
+}
+
+void ncclVerifiableApplyBias(
+    void *elts, void* bias, intptr_t elt_n, int elt_ty, int red_op, intptr_t elt_ix0,
+    cudaStream_t stream
+  ) {
+  #define CASE_OP(op) \
+    applyBias1(elts, bias, elt_n, elt_ty, op, elt_ix0, stream); \
+    break;
+  switch(red_op) {
+  case ncclSum: CASE_OP(ReduceSum())
+  case ncclMin: CASE_OP(ReduceMin())
+  case ncclMax: CASE_OP(ReduceMax())
+  case ncclProd: CASE_OP(ReduceProd())
+  #if HAVE_ncclPreMulSum
+  default: CASE_OP(ReducePreMulSum())
+  #endif
+  }
+  #undef CASE_OP
+}
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
