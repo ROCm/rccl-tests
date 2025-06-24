@@ -21,6 +21,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <cstring>
 
 // Ensures backward compatibility for FP8 datatypes
 #if NCCL_VERSION_CODE < NCCL_VERSION(2,24,3)
