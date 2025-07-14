@@ -131,14 +131,14 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
       _out = std::ofstream(fileName, std::ios_base::out);
       _outputValid = true;
       if (_outputFormat == "csv") {
-        _out << "numCycle, ";
-        _out << "collective, ";
+        _out << "numCycle,";
+        _out << "collective,";
 #ifdef MPI_SUPPORT
-        _out << "ranks, rankspernode, gpusperrank, ";
+        _out << "ranks,rankspernode,gpusperrank,";
 #else
-        _out << "gpus, ";
+        _out << "gpus,";
 #endif
-        _out << "size, type, redop, inplace, time, algbw, busbw, #wrong\n";
+        _out << "size,type,redop,inplace,time,algbw,busbw,#wrong\n";
       }
     }
   }
@@ -185,7 +185,7 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
     if (_outputFormat == "csv") {
       _out << iter->first;
       if (std::next(iter) != outputValuesKeys.end()) {
-        _out << ", ";
+        _out << ",";
       }
     } else { //json
       if (iter == outputValuesKeys.begin()) {
