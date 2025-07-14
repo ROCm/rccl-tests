@@ -10,6 +10,7 @@
 #include "rccl/rccl.h"
 #include <stdio.h>
 #include <cstdint>
+#include <cstring>
 #include <algorithm>
 #ifdef MPI_SUPPORT
 #include "mpi.h"
