@@ -1551,13 +1551,13 @@ testResult_t run() {
      for (int i=0; i<nGpus*nThreads; i++) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
        if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
-         NCCLCHECK(ncclCommWindowRegister(comms[i], &sendbuffs[i], maxBytes, (ncclWindow_t*)&sendRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
-         NCCLCHECK(ncclCommWindowRegister(comms[i], &recvbuffs[i], maxBytes, (ncclWindow_t*)&recvRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+         NCCLCHECK(ncclCommWindowRegister(comms[i], sendbuffs[i], maxBytes, (ncclWindow_t*)&sendRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+         NCCLCHECK(ncclCommWindowRegister(comms[i], recvbuffs[i], maxBytes, (ncclWindow_t*)&recvRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
        } else
 #endif
        {
-         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &sendbuffs[i], maxBytes, &sendRegHandles[i]));
-         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &recvbuffs[i], maxBytes, &recvRegHandles[i]));
+         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], sendbuffs[i], maxBytes, &sendRegHandles[i]));
+         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], recvbuffs[i], maxBytes, &recvRegHandles[i]));
        }
      }
      NCCLCHECK(ncclGroupEnd());
