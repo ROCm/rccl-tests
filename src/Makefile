@@ -30,7 +30,9 @@ HIP_MINOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 2)
 # Currently, supports gfx906,gfx908,gfx90a,gfx942,gfx950,gfx1030,gfx1100,gfx1101,gfx1102,gfx1200,gfx1201
 ifndef GPU_TARGETS
 GPU_TARGETS = gfx906 gfx908 gfx90a
-  ifeq ($(shell test "0$(HIP_MAJOR)" -eq 6; echo $$?),0)
+  ifeq ($(shell test "0$(HIP_MAJOR)" -ge 7; echo $$?),0)
+    GPU_TARGETS += gfx942 gfx950
+  else ifeq ($(shell test "0$(HIP_MAJOR)" -eq 6; echo $$?),0)
     # Include gfx942 support if we're using ROCm 6.0 or above
     GPU_TARGETS += gfx942
     ifeq ($(shell test "0$(HIP_MINOR)" -ge 5; echo $$?),0)
