@@ -105,7 +105,7 @@ template<typename T>
 struct IsIntegral: std::is_integral<T> {};
 template<>
 struct IsIntegral<__half>: std::false_type {};
-#if RCCL_BFLOAT16 == 1
+#if HAVE_ncclBfloat16
 template<>
 struct IsIntegral<hip_bfloat16>: std::false_type {};
 #endif
@@ -150,6 +150,10 @@ namespace {
   __host__ __device__ __half castTo<__half>(float x) {
     return __float2half(x);
   }
+  // template<>
+  // __host__ __device__ __half castTo<half>(double x) {
+  //   return __double2half(x);
+  // }
   template<>
   __host__ __device__ half castTo<__half>(uint64_t x) {
     return __ull2half_rn(x);
@@ -864,7 +868,7 @@ __host__ __device__ void genOutput(
 namespace {
 template<typename T>
 __host__ __device__ void genInput(
-  T &ans, ReduceAvg, int rank_n, int rank_me, uint64_t rng, intptr_t index,
+    T &ans, ReduceAvg, int rank_n, int rank_me, uint64_t rng, intptr_t index,
     std::false_type /*integral*/
   ) {
   // We can't control the nranks divisor in avareages so to control error we
@@ -953,7 +957,6 @@ __host__ __device__ T genOutput(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
 __global__ void __launch_bounds__(512, 1) prepareInput2(
@@ -1040,11 +1043,9 @@ hipError_t ncclVerifiablePrepareInput(
   }
   #undef CASE_OP
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
 __global__ void __launch_bounds__(512, 1) prepareExpected2(
@@ -1130,7 +1131,6 @@ hipError_t ncclVerifiablePrepareExpected(
   }
   #undef CASE_OP
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1151,7 +1151,6 @@ __host__ __device__  uint64_t calcDelta(T a, T b) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T>
 __global__ void __launch_bounds__(512, 1) verifyPrepared(
@@ -1245,7 +1244,6 @@ hipError_t verifyInline1(
   ReduceAvg opavg{rank_n};
   ReducePreMulSum oppremulsum;
   void *args[8] = {&results, &elt_n, nullptr, &rank_n, &seed, &elt_ix0, &tolerance, &bad_elt_n};
-
   #define CASE_OP(op) \
     if(rank_n == 1) { \
       fn = (void const*)&verifyInline2<T, Uint, ReduceNil>; \
@@ -1336,13 +1334,10 @@ hipError_t ncclVerifiableVerify(
   }
   #undef CASE_TY
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
-
 #if SELF_TEST
-#include <iostream>
-
+namespace {
 template<typename T, typename Op>
 __device__ void sweep2(int ty, char const *tyname, Op op, char const *opname, int rank_n) {
   //if(!std::is_same<T,half>::value) return;
@@ -1397,16 +1392,16 @@ __global__ void __launch_bounds__(512, 1) sweep() {
   #if HAVE_ncclBfloat16
     sweep1<hip_bfloat16>(ncclBfloat16, "bfloat16");
   #endif
-  #if HAVE_ncclfp8 && __HIP_DEVICE_COMPILE__
+  #if HAVE_ncclfp8_DEVICE
     sweep1<rccl_float8>(ncclFloat8e4m3, "fp8_e4m3");
     sweep1<rccl_bfloat8>(ncclFloat8e5m2, "fp8_e5m2");
   #endif
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");
 }
+}
 
 void ncclVerifiableLaunchSelfTest() {
-  sweep<<<1,512>>>();
   sweep<<<1,512>>>();
 }
 #endif
