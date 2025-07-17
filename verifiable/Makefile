@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2015-2025, NVIDIA CORPORATION. All rights reserved.
 # Modifications are Copyright (c) 2019-2025 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
@@ -68,7 +68,7 @@ include verifiable.mk
 
 self_test: $(DST_DIR)/self_test
 
-$(DST_DIR)/self_test: verifiable.cu verifiable.h
+$(DST_DIR)/self_test: main.cu $(TEST_VERIFIABLE_LIBS)
 	@printf "Linking  %s\n" $@
 	@mkdir -p $(DST_DIR)
-	$(HIPCC) -o $@ $(HIPCUFLAGS) -DSELF_TEST=1 verifiable.cu $(HIPLDFLAGS)
+	$(HIPCC) -o $@ $(HIPCUFLAGS) -DSELF_TEST=1 $< -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable $(HIPLDFLAGS) -Xlinker "-rpath=\$$ORIGIN"
