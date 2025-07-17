@@ -22,6 +22,8 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <utility>
+#include <vector>
 
 // Ensures backward compatibility for FP8 datatypes
 #if NCCL_VERSION_CODE < NCCL_VERSION(2,24,3)
@@ -119,6 +121,7 @@ class Reporter {
     ~Reporter() { if (_outputValid) { _out.close(); } };
     void setParameters(const size_t numCycle, const char* name, const char* typeName, const char* opName);
     void addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size_t numBytes, int inPlace, double timeUsec, double algBw, double busBw, int64_t wrongElts = -1);
+    void writeFile();
 
   private:
     bool isMainThread();
@@ -132,6 +135,7 @@ class Reporter {
     std::string _collectiveName;
     std::string _typeName;
     std::string _opName;
+    std::vector<std::vector<std::pair<std::string, std::string>>> _outputData;
 };
 
 struct testEngine {

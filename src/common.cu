@@ -130,16 +130,6 @@ Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputForm
     if (isMainThread()) {
       _out = std::ofstream(fileName, std::ios_base::out);
       _outputValid = true;
-      if (_outputFormat == "csv") {
-        _out << "numCycle,";
-        _out << "collective,";
-#ifdef MPI_SUPPORT
-        _out << "ranks,rankspernode,gpusperrank,";
-#else
-        _out << "gpus,";
-#endif
-        _out << "size,type,redop,inplace,time,algbw,busbw,#wrong\n";
-      }
     }
   }
 }
@@ -181,26 +171,53 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
   outputValuesKeys.push_back(makeValueKeyPair(busBw, "busBw"));
   outputValuesKeys.push_back(makeValueKeyPair(wrongEltsStr, "wrong"));
 
-  for (auto iter = outputValuesKeys.begin(); iter != outputValuesKeys.end(); ++iter) {
-    if (_outputFormat == "csv") {
-      _out << iter->first;
-      if (std::next(iter) != outputValuesKeys.end()) {
-        _out << ",";
+  _outputData.push_back(outputValuesKeys);
+}
+
+void Reporter::writeFile() {
+  if (!isMainThread() || !_outputValid)
+    return;
+
+  if (_outputFormat == "csv") {
+    _out << "numCycle,";
+    _out << "collective,";
+#ifdef MPI_SUPPORT
+    _out << "ranks,rankspernode,gpusperrank,";
+#else
+    _out << "gpus,";
+#endif
+    _out << "size,type,redop,inplace,time,algbw,busbw,#wrong\n";
+    for (auto iterEntries = _outputData.begin(); iterEntries != _outputData.end(); ++iterEntries) {
+      for (auto iterVals = (*iterEntries).begin(); iterVals != (*iterEntries).end(); ++iterVals) {
+	_out << iterVals->first;
+	if (std::next(iterVals) != (*iterEntries).end()) {
+	  _out << ",";
+	}
       }
-    } else { //json
-      if (iter == outputValuesKeys.begin()) {
-        _out << "{";
+      _out << std::endl;
+    }
+  } else { //json
+    _out << "[" << std::endl;
+    for (auto iterEntries = _outputData.begin(); iterEntries != _outputData.end(); ++iterEntries) {
+      for (auto iterVals = (*iterEntries).begin(); iterVals != (*iterEntries).end(); ++iterVals) {
+        if (iterVals == (*iterEntries).begin()) {
+          _out << "{";
+        }
+        _out << "\"" << iterVals->second << "\":" << iterVals->first;
+        if (std::next(iterVals) != (*iterEntries).end()) {
+          _out << ", ";
+	}
       }
-      _out << "\"" << iter->second << "\":" << iter->first;
-      if (std::next(iter) != outputValuesKeys.end()) {
-        _out << ", ";
+      if (std::next(iterEntries) != _outputData.end()) {
+        _out << "}," << std::endl;
       } else {
-        _out << "}";
+	_out << "}" << std::endl;
       }
     }
+    _out << "]" << std::endl;
   }
-  _out << std::endl;
 }
+
 
 bool Reporter::isMainThread() { return is_main_thread == 1; }
 static int minCudaArch = 1<<30;
@@ -1639,6 +1656,8 @@ testResult_t run() {
   MPI_Comm_free(&mpi_comm);
   MPI_Finalize();
 #endif
+
+  reporter.writeFile();
 
   // 'cuda-memcheck --leak-check full' requires this
   PRINT("%s\n", ncclGetLastError(NULL));
