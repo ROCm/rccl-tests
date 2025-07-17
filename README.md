@@ -4,7 +4,7 @@ These tests check both the performance and the correctness of RCCL operations. T
 
 ## Build
 
-To build the tests, just type `make`.
+To build the tests, just type `make` or `make -j`
 
 If HIP is not installed in `/opt/rocm`, you may specify `HIP_HOME`. Similarly, if RCCL (`librccl.so`) is not installed in `/opt/rocm/lib/`, you may specify `NCCL_HOME` and `CUSTOM_RCCL_LIB`.
 
@@ -75,12 +75,14 @@ RCCL Tests can run on multiple processes, multiple threads, and multiple HIP dev
 ### Quick examples
 
 Run on single node with 8 GPUs (`-g 8`), scanning from 8 Bytes to 128MBytes :
+
 ```shell
 $ ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 8
 ```
 
 Run 64 MPI processes on nodes with 8 GPUs each, for a total of 64 GPUs spread across 8 nodes :
 (NB: The rccl-tests binaries must be compiled with `MPI=1` for this case)
+
 ```shell
 $ mpirun -np 64 -N 8 ./build/all_reduce_perf -b 8 -e 8G -f 2 -g 1
 ```
@@ -138,8 +140,8 @@ All tests support the same set of arguments :
   * `-z,--blocking <0/1>` Make RCCL collective blocking, i.e. have CPUs wait and sync after each collective. Default : 0.
   * `-G,--hipgraph <num graph launches>` Capture iterations as a HIP graph and then replay specified number of times. Default : 0.
   * `-C,--report_cputime <0/1>]` Report CPU time instead of latency. Default : 0.
-  * `-R,--local_register <1/0>` enable local buffer registration on send/recv buffers. Default : 0.
-  * `-T,--timeout <time in seconds>` timeout each test after specified number of seconds. Default: disabled.
+  * `-R,--local_register <0/1/2>` enable local (1) or symmetric (2) buffer registration on send/recv buffers. Default : 0.
+  * `-T,--timeout <time in seconds>` timeout each test after specified number of seconds. Default : disabled.
   * `-F,--cache_flush <cache flush after every -F iteration>` Enable cache flush after every -F iteration. Default : 0 (No cache flush).
   * `-O,--out_of_place <0=in-place only, 1=out-of-place only>`. Default: both.
   * `-q,--delay <delay>` Delay between out-of-place and in-place runs (in microseconds). Default: 10.
@@ -158,9 +160,12 @@ with the same color will end up in the same group. The resulting group is printe
 `NCCL_TESTS_SPLIT_MASK="<value>"` is equivalent to `NCCL_TESTS_SPLIT="&<value>"`.
 
 Here are a few examples:
- - `NCCL_TESTS_SPLIT="AND 0x7"` or `NCCL_TESTS_SPLIT="MOD 8`: On systems with 8 GPUs, run 8 parallel operations, each with 1 GPU per node (purely communicating on the network)
- - `NCCL_TESTS_SPLIT="OR 0x7"` or `NCCL_TESTS_SPLIT="DIV 8"`: On systems with 8 GPUs, run one operation per node, purely intra-node.
- - `NCCL_TESTS_SPLIT="AND 0x1"` or `NCCL_TESTS_SPLIT="MOD 2"`: Run two operations, each operation using every other rank.
+
+ - `NCCL_TESTS_SPLIT="AND 0x7"` or `NCCL_TESTS_SPLIT="MOD 8"`: On systems with 8 GPUs, run 8 parallel operations, each with 1 GPU per node (purely communicating over the inter-node network)
+
+- `NCCL_TESTS_SPLIT="OR 0x7"` or `NCCL_TESTS_SPLIT="DIV 8"`: On systems with 8 GPUs, run one operation per node, purely intra-node.
+
+- `NCCL_TESTS_SPLIT="AND 0x1"` or `NCCL_TESTS_SPLIT="MOD 2"`: Run two operations, each operation using every other rank.
 
 Note that the reported bandwidth is per group, hence to get the total bandwidth used by all groups, one must multiply by the number of groups.
 
@@ -178,6 +183,6 @@ $ LD_LIBRARY_PATH=/path/to/rccl-install/lib/ HSA_FORCE_FINE_GRAIN_PCIE=1 python3
 
 ## Copyright
 
-NCCL tests are provided under the BSD license. All source code and accompanying documentation is copyright (c) 2016-2024, NVIDIA CORPORATION. All rights reserved.
+NCCL tests are provided under the BSD license. All source code and accompanying documentation is copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
 
 All modifications are copyright (c) 2019-2025 Advanced Micro Devices, Inc. All rights reserved.

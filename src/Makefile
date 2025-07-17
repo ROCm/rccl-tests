@@ -1,9 +1,10 @@
 #
-# Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2015-2025, NVIDIA CORPORATION. All rights reserved.
 # Modifications are Copyright (c) 2019-2025 Advanced Micro Devices, Inc. All rights reserved.
 #
 # See LICENSE.txt for license information
 #
+include common.mk
 
 ROCM_PATH ?= /opt/rocm
 MPI_HOME ?= /usr/lib/x86_64-linux-gnu
@@ -20,6 +21,10 @@ CXX = $(HIPCC)
 HIPCUFLAGS := -std=c++14
 LDFLAGS    :=
 HIPLDFLAGS :=
+
+MPI ?= 0        # Set to 1 to enable MPI support (multi-process/multi-node)
+NAME_SUFFIX ?=  # e.g. _mpi when using MPI=1
+DSO ?= 0        # Set to 1 to create and use libverifiable.so to reduce binary size
 
 HIP_VERSION = $(strip $(shell which $(HIPCONFIG) >/dev/null && $(HIPCONFIG) --version))
 HIP_MAJOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 1)
@@ -126,7 +131,7 @@ DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 BIN_FILES_LIST := all_reduce all_gather broadcast reduce_scatter reduce alltoall scatter gather sendrecv alltoallv hypercube
-BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
+BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf${NAME_SUFFIX})
 
 GIT_VERSION_FILE := ${DST_DIR}/src/git_version.cpp
 GIT_REV          := $(shell git log --pretty=format:'%h' -n 1)
@@ -157,7 +162,15 @@ ${HIPIFY_DIR}/%.h: %.h
 	@mkdir -p ${HIPIFY_DIR}
 	hipify-perl -quiet-warnings $< > $@
 
+.PRECIOUS: ${DST_DIR}/%.o
+
 ${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS) $(GIT_VERSION_FILE)
+	@printf "Compiling  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	echo "$(HIPCC) $(HIPCUFLAGS) -I. -c -o $@ $<"
+	$(HIPCC) $(HIPCUFLAGS) -I. -c -o $@ $<
+
+${DST_DIR}/%$(NAME_SUFFIX).o: %.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_HDRS) $(GIT_VERSION_FILE)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) $(HIPCUFLAGS) -I. -c -o $@ $<"
@@ -166,11 +179,22 @@ ${DST_DIR}/%.o: ${HIPIFY_DIR}/%.cu.cpp ${HIPIFY_DIR}/common.h $(TEST_VERIFIABLE_
 ${DST_DIR}/timer.o: timer.cc timer.h
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(CXX) $(CXXFLAGS) -o $@ -c timer.cc
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${DST_DIR}/common.o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS) $(DST_DIR)/src/git_version.cpp
+ifeq ($(DSO), 1)
+${DST_DIR}/%_perf$(NAME_SUFFIX): ${DST_DIR}/%.o ${DST_DIR}/common$(NAME_SUFFIX).o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_LIBS) $(DST_DIR)/src/git_version.cpp
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	echo "$(HIPCC) -o $@ $^ $(HIPLDFLAGS)"
+	$(HIPCC) -o $@ $^ $(HIPLDFLAGS) -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable -Xlinker "--enable-new-dtags" -Xlinker "-rpath,\$$ORIGIN:\$$ORIGIN/verifiable"
+else
+${DST_DIR}/%_perf$(NAME_SUFFIX):${DST_DIR}/%.o ${DST_DIR}/common$(NAME_SUFFIX).o ${DST_DIR}/timer.o $(TEST_VERIFIABLE_OBJS) $(DST_DIR)/src/git_version.cpp
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	echo "$(HIPCC) -o $@ $^ $(HIPLDFLAGS)"
 	$(HIPCC) -o $@ $^ $(HIPLDFLAGS)
+endif
+
+clean_intermediates:
+	rm -f ${DST_DIR}/*.o $(TEST_VERIFIABLE_OBJS)
 

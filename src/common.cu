@@ -41,19 +41,19 @@ bool IsArchMatch(char const* arch, char const* target) {
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
     ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble
-  #if RCCL_BFLOAT16 == 1
+  #if HAVE_BF16
     , ncclBfloat16
   #endif
-  #if RCCL_FLOAT8 == 1
+  #if HAVE_FP8
     , ncclFloat8e4m3, ncclFloat8e5m2
   #endif
   };
   const char *test_typenames[ncclNumTypes] = {
     "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"
-  #if RCCL_BFLOAT16 == 1
+  #if HAVE_BF16
     , "bfloat16"
   #endif
-  #if RCCL_FLOAT8 == 1
+  #if HAVE_FP8
     , "fp8_e4m3", "fp8_e5m2"
   #endif
   };
@@ -122,8 +122,11 @@ static int enable_in_place = 1;
 static int enable_cache_flush = 0;
 static int enable_rotating_tensor = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+#define LOCAL_REGISTER 1
+#define SYMMETRIC_REGISTER 2
 static int local_register = 0;
 #endif
+static int minCudaArch = 1<<30;
 
 Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputFormat(outputFormat) {
   if (!fileName.empty()) {
@@ -203,7 +206,6 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
 }
 
 bool Reporter::isMainThread() { return is_main_thread == 1; }
-static int minCudaArch = 1<<30;
 
 #define NUM_BLOCKS 32
 
@@ -550,10 +552,10 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       union {
         int8_t i8; uint8_t u8; int32_t i32; uint32_t u32; int64_t i64; uint64_t u64;
         half f16; float f32; double f64;
-        #if defined(RCCL_BFLOAT16)
+        #if HAVE_BF16
         hip_bfloat16 bf16;
         #endif
-        #if defined(RCCL_FLOAT8)
+        #if HAVE_FP8
         rccl_float8 fp8_e4m3; rccl_bfloat8 fp8_e5m2;
         #endif
       };
@@ -567,14 +569,14 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       case ncclFloat16: f16 = ncclVerifiablePremulScalar<half>(rank); break;
       case ncclFloat32: f32 = ncclVerifiablePremulScalar<float>(rank); break;
       case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
-      #if defined(RCCL_BFLOAT16)
+      #if HAVE_BF16
       case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<hip_bfloat16>(rank); break;
       #endif
-      #if defined(RCCL_FLOAT8)
+      #if HAVE_FP8
       case ncclFloat8e4m3: fp8_e4m3 = ncclVerifiablePremulScalar<rccl_float8>(rank); break;
       case ncclFloat8e5m2 : fp8_e5m2 = ncclVerifiablePremulScalar<rccl_bfloat8>(rank); break;
       #endif
-      case ncclNumTypes: break;
+      default: break; // Just to silence clang
       }
       NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[i]));
     }
@@ -957,20 +959,38 @@ testResult_t threadInit(struct threadArgs* args) {
   }
   NCCLCHECK(ncclGroupEnd());
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+  NCCLCHECK(ncclGroupStart());
   void **sendRegHandles = (local_register) ? (void **)malloc(sizeof(*sendRegHandles)*args->nGpus) : NULL;
   void **recvRegHandles = (local_register) ? (void **)malloc(sizeof(*recvRegHandles)*args->nGpus) : NULL;
   for (int i=0; i<args->nGpus; i++) {
-    if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->sendbuffs[i], args->maxbytes, &sendRegHandles[i]));
-    if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->recvbuffs[i], args->maxbytes, &recvRegHandles[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+    if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
+      NCCLCHECK(ncclCommWindowRegister(args->comms[i], args->sendbuffs[i], args->maxbytes, (ncclWindow_t*)&sendRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+      NCCLCHECK(ncclCommWindowRegister(args->comms[i], args->recvbuffs[i], args->maxbytes, (ncclWindow_t*)&recvRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+    } else
+#endif
+    {
+      if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->sendbuffs[i], args->maxbytes, &sendRegHandles[i]));
+      if (local_register) NCCLCHECK(ncclCommRegister(args->comms[i], args->recvbuffs[i], args->maxbytes, &recvRegHandles[i]));
+    }
   }
+  NCCLCHECK(ncclGroupEnd());
 #endif
 
   TESTCHECK(threadRunTests(args));
 
   for (int i=0; i<args->nGpus; i++) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-    if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], sendRegHandles[i]));
-    if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], recvRegHandles[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+    if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
+      NCCLCHECK(ncclCommWindowDeregister(args->comms[i], (ncclWindow_t)sendRegHandles[i]));
+      NCCLCHECK(ncclCommWindowDeregister(args->comms[i], (ncclWindow_t)recvRegHandles[i]));
+    } else
+#endif
+    {
+      if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], sendRegHandles[i]));
+      if (local_register) NCCLCHECK(ncclCommDeregister(args->comms[i], recvRegHandles[i]));
+    }
 #endif
     NCCLCHECK(ncclCommDestroy(args->comms[i]));
   }
@@ -1046,17 +1066,20 @@ int main(int argc, char* argv[]) {
     test_typenum = 9;
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
       test_opnum++; // ncclAvg
-      #if defined(RCCL_BFLOAT16)
-        test_typenum++; // bfloat16
-      #endif
-      #if defined(RCCL_FLOAT8)
-        test_typenum++; // fp8_e4m3
-        test_typenum++; // fp8_e5m2
-      #endif
     }
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) && test_ncclVersion >= NCCL_VERSION(2,11,0)) {
       test_opnum++; // PreMulSum
     }
+    #if defined(RCCL_BFLOAT16)
+    if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
+      test_typenum++; // bfloat16
+    }
+    #endif
+    #if defined(RCCL_FLOAT8)
+    if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
+      test_typenum += 2; // fp8 e4m3,e5m2
+    }
+    #endif
   #endif
 
   // Parse args
@@ -1194,8 +1217,10 @@ int main(int argc, char* argv[]) {
         break;
       case 'R':
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-        if ((int)strtol(optarg, NULL, 0)) {
-          local_register = 1;
+        local_register = (int)strtol(optarg, NULL, 0);
+        if (local_register == SYMMETRIC_REGISTER && test_ncclVersion < NCCL_VERSION(2,27,0)) {
+          printf("Option -R 2 (symmetric) is not supported before NCCL 2.27. Defaulting to local registration\n");
+          local_register = LOCAL_REGISTER;
         }
 #else
         printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
@@ -1269,7 +1294,7 @@ int main(int argc, char* argv[]) {
             "[-G,--cudagraph <num graph launches>] \n\t"
             "[-C,--report_cputime <0/1>] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
-            "[-R,--local_register <1/0> enable local buffer registration on send/recv buffers (default: disable)] \n\t"
+            "[-R,--local_register <0/1/2> enable local (1) or symmetric (2) buffer registration on send/recv buffers (default: disable (0))] \n\t"
             "[-Y,--memory_type <coarse/fine/host/managed>] \n\t"
             "[-u,--cumask <d0,d1,d2,d3>] \n\t"
 	    "[-O,--out_of_place <0/1>] \n\t"
@@ -1486,6 +1511,22 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 #endif
+#if defined(RCCL_FLOAT8)
+  if (NCCL_VERSION_CODE >= NCCL_VERSION(2,24,0) && test_ncclVersion >= NCCL_VERSION(2,24,0)) {
+    if (minCudaArch < 900) { // Filter out fp8 on pre-Hopper hardware
+      int n = 0;
+      for (int i=0; i < test_typenum; i++) {
+        if (!(test_types[i] == ncclFloat8e4m3 || test_types[i] == ncclFloat8e5m2)) {
+          test_types[n] = test_types[i];
+          test_typenames[n] = test_typenames[i];
+          n += 1;
+        }
+      }
+      test_typenum = n;
+    }
+  }
+#endif
+
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* comms = (ncclComm_t*)malloc(sizeof(ncclComm_t)*nThreads*nGpus);
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
@@ -1504,12 +1545,22 @@ testResult_t run() {
        NCCLCHECK(ncclGroupEnd());
      }
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+     NCCLCHECK(ncclGroupStart());
      sendRegHandles = (local_register) ? (void **)malloc(sizeof(*sendRegHandles)*nThreads*nGpus) : NULL;
      recvRegHandles = (local_register) ? (void **)malloc(sizeof(*recvRegHandles)*nThreads*nGpus) : NULL;
      for (int i=0; i<nGpus*nThreads; i++) {
-       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &sendbuffs[i], maxBytes, &sendRegHandles[i]));
-       if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &recvbuffs[i], maxBytes, &recvRegHandles[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+       if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
+         NCCLCHECK(ncclCommWindowRegister(comms[i], &sendbuffs[i], maxBytes, (ncclWindow_t*)&sendRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+         NCCLCHECK(ncclCommWindowRegister(comms[i], &recvbuffs[i], maxBytes, (ncclWindow_t*)&recvRegHandles[i], NCCL_WIN_COLL_SYMMETRIC));
+       } else
+#endif
+       {
+         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &sendbuffs[i], maxBytes, &sendRegHandles[i]));
+         if (local_register) NCCLCHECK(ncclCommRegister(comms[i], &recvbuffs[i], maxBytes, &recvRegHandles[i]));
+       }
      }
+     NCCLCHECK(ncclGroupEnd());
 #endif
   }
 
@@ -1607,8 +1658,16 @@ testResult_t run() {
   if (!parallel_init) {
     for(int i=0; i<nGpus*nThreads; ++i) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-      if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], sendRegHandles[i]));
-      if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], recvRegHandles[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+      if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
+        NCCLCHECK(ncclCommWindowDeregister(comms[i], (ncclWindow_t)sendRegHandles[i]));
+        NCCLCHECK(ncclCommWindowDeregister(comms[i], (ncclWindow_t)recvRegHandles[i]));
+      } else
+#endif
+      {
+        if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], sendRegHandles[i]));
+        if (local_register) NCCLCHECK(ncclCommDeregister(comms[i], recvRegHandles[i]));
+      }
 #endif
       NCCLCHECK(ncclCommDestroy(comms[i]));
     }
