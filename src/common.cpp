@@ -1564,6 +1564,9 @@ testResult_t run() {
         PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "", "(B)", "(elements)", "", "", "",
         "(us)", "(GB/s)", "(GB/s)", "");
   }
+  if (header.size() > 0) {
+    f << header;
+  }
   Reporter reporter(output_file, output_format);
 
   std::vector<testThread> threads(nThreads);
