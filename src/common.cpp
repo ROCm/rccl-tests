@@ -26,6 +26,9 @@
 
 #include "verifiable.h"
 #include "git_version.h"
+#include <iostream>
+#include <fstream>
+#include <stdarg.h>
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 int32_t gpu_block3;
@@ -124,6 +127,8 @@ static int enable_rotating_tensor = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 static int local_register = 0;
 #endif
+static int save_csv = 0;
+static std::ofstream f;
 
 Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputFormat(outputFormat) {
   if (!fileName.empty()) {
@@ -612,7 +617,7 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
-testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place) {
+testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, std::string& row) {
   size_t count = args->nbytes / wordSize(type);
   if (datacheck) {
     // Initialize sendbuffs, recvbuffs and expected
@@ -764,9 +769,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     sprintf(timeStr, "%7.2f", timeUsec);
   }
   if (args->reportErrors) {
-    PRINT("  %7s  %6.2f  %6.2f  %5g", timeStr, algBw, busBw, (double)wrongElts);
+    row += PRINT("  %7s  %6.2f  %6.2f  %5g", ",%s,%f,%f,%g", timeStr, algBw, busBw, (double)wrongElts);
   } else {
-    PRINT("  %7s  %6.2f  %6.2f  %5s", timeStr, algBw, busBw, "N/A");
+    row += PRINT("  %7s  %6.2f  %6.2f  %5s", ",%s,%f,%f,%s", timeStr, algBw, busBw, "N/A");
   }
 
   auto largestMessageSize = std::max(args->sendBytes, args->expectedBytes);
@@ -908,22 +913,26 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   size_t iter = 0;
 
   do {
-    if (run_cycles > 1) PRINT("# Testing %lu cycle.\n", iter+1);
+    if (run_cycles > 1) PRINT("# Testing %lu cycle.\n", "", iter+1);
     if (args->reporter) {
       args->reporter->setParameters(iter, args->collTest->name, typeName, opName);
     }
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
+      std::string row;
       setupArgs(size, type, args);
       char rootName[100];
       sprintf(rootName, "%6i", root);
-      PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+      row +=PRINT("%12li  %12li  %8s  %6s  %6s", "%li,%li,%s,%s,%s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
       if (enable_out_of_place) {
-        TESTCHECK(BenchTime(args, type, op, root, 0));
+        TESTCHECK(BenchTime(args, type, op, root, 0, row));
         usleep(delay_inout_place);
       }
         if (enable_in_place)
-        TESTCHECK(BenchTime(args, type, op, root, 1));
-      PRINT("\n");
+        TESTCHECK(BenchTime(args, type, op, root, 1, row));
+      row += PRINT("\n", "\n");
+      if (row.size() > 0) {
+        f << row;
+      }
     }
     --repeat;
     ++iter;
@@ -1093,6 +1102,7 @@ int main(int argc, char* argv[]) {
     {"rotating_tensor", required_argument, 0, 'E'},   //RCCL
     {"output_file", required_argument, 0, 'x'},       //RCCL
     {"output_format", required_argument, 0, 'Z'},     //RCCL
+    {"save_csv", required_argument, 0, 'v'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -1100,7 +1110,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:v:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1238,6 +1248,12 @@ int main(int argc, char* argv[]) {
       case 'Z':
         output_format = optarg;
         break;
+      case 'v':
+        save_csv = strtol(optarg, nullptr, 0);
+        if (save_csv) {
+          f.open("perf_results.csv");
+        }
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1278,6 +1294,7 @@ int main(int argc, char* argv[]) {
 	    "[-E,--rotating_tensor <0/1>] \n\t"
             "[-x,--output_file <output file name>] \n\t"
             "[-Z,--output_format <output format <csv|json>] \n\t"
+            "[-v,--save_csv <1/0> save results to csv or not] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1341,7 +1358,7 @@ testResult_t run() {
   hipDeviceProp_t devProp;
   CUDACHECK(hipGetDeviceProperties(&devProp, 0));
   if (IsArchMatch(devProp.gcnArchName, "gfx942")) {
-    PRINT("On gfx942 architecture, using FNUZ FP8 types");
+    PRINT("On gfx942 architecture, using FNUZ FP8 types", "");
     rccl_float8_useFnuz = true;
   }
 
@@ -1398,15 +1415,15 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
-  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
+  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n", "",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
         warmup_iters, iters, agg_iters, datacheck, cudaGraphLaunches);
-  if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
-  if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
-  PRINT("#\n");
-  PRINT("rccl-tests: Version %s\n", rcclTestsGitHash);
-  PRINT("# Using devices\n");
+  if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n", "");
+  if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n", "");
+  PRINT("#\n", "");
+  PRINT("rccl-tests: Version %s\n", "", rcclTestsGitHash);
+  PRINT("# Using devices\n", "");
 #define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
@@ -1432,12 +1449,12 @@ testResult_t run() {
   MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
   if (proc == 0) {
     for (int p = 0; p < totalProcs; p++)
-      PRINT("%s", lines+MAX_LINE*p);
+      PRINT("%s", "", lines+MAX_LINE*p);
     free(lines);
   }
   MPI_Allreduce(MPI_IN_PLACE, &maxMem, 1, MPI_LONG, MPI_MIN, MPI_COMM_WORLD);
 #else
-  PRINT("%s", line);
+  PRINT("%s", "", line);
 #endif
 
   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
@@ -1526,24 +1543,25 @@ testResult_t run() {
   fflush(stdout);
 
   const char* timeStr = report_cputime ? "cputime" : "time";
-  PRINT("#\n");
+  PRINT("#\n", "");
+  std::string header;
   if (enable_out_of_place && enable_in_place) {
-  	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+  	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "", "");
+  	header += PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "size", "count", "type", "redop", "root",
       	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
   	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
       	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
   } else if (enable_out_of_place) {
-	  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place      \n", "", "", "", "", "");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+	  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place      \n", "", "", "", "", "", "");
+        header += PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "size", "count", "type", "redop", "root",
         timeStr, "algbw", "busbw", "#wrong");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "");
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "", "(B)", "(elements)", "", "", "",
+        "(us)", "(GB/s)", "(GB/s)");
   } else {
-    PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
+    PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "", "");
+        header += PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", "size", "count", "type", "redop", "root",
         timeStr, "algbw", "busbw", "#wrong");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "", "(B)", "(elements)", "", "", "",
         "(us)", "(GB/s)", "(GB/s)", "");
   }
   Reporter reporter(output_file, output_format);
@@ -1631,21 +1649,43 @@ testResult_t run() {
   double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
-  if (datacheck) PRINT("# Errors with asterisks indicate errors that have exceeded the maximum threshold.\n");
-  PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
-  PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
-  PRINT("#\n");
+  if (datacheck) PRINT("# Errors with asterisks indicate errors that have exceeded the maximum threshold.\n", "");
+  PRINT("# Out of bounds values : %d %s\n", "", errors[0], errors[0] ? "FAILED" : "OK");
+  PRINT("# Avg bus bandwidth    : %g %s\n", "", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
+  PRINT("#\n", "");
 #ifdef MPI_SUPPORT
   MPI_Comm_free(&mpi_comm);
   MPI_Finalize();
 #endif
 
   // 'cuda-memcheck --leak-check full' requires this
-  PRINT("%s\n", ncclGetLastError(NULL));
+  PRINT("%s\n", "", ncclGetLastError(NULL));
   cudaDeviceReset();
+  if (f.is_open()) {
+    f.close();
+  }
 
   if (errors[0] || bw[0] < check_avg_bw*(0.9))
     exit(EXIT_FAILURE);
   else
     exit(EXIT_SUCCESS);
+}
+
+std::string PRINT(const char* console_format, const char* csv_format, ...) {
+  if (!is_main_thread) {
+    return std::string();
+  }
+  va_list args1;
+  va_start(args1, csv_format);
+  vprintf(console_format, args1);
+  va_end(args1);
+  if (!save_csv) {
+    return std::string();
+  }
+  char buff[1024] = {'\0'};
+  va_list args2;
+  va_start(args2, csv_format);
+  vsprintf(buff, csv_format, args2);
+  va_end(args2);
+  return std::string(buff);
 }

@@ -347,6 +347,6 @@ static int ncclstringtomtype (char *str) {
 
 extern int is_main_proc;
 extern thread_local int is_main_thread;
-#define PRINT if (is_main_thread) printf
+extern std::string PRINT(const char* console_format, const char* csv_format, ...);
 
 #endif
