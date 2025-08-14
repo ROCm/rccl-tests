@@ -101,7 +101,7 @@ testResult_t HyperCubeRunTest(struct threadArgs* args, int root, ncclDataType_t 
   int nRanks = args->nProcs*args->nThreads*args->nGpus;
   if (nRanks && !(nRanks & (nRanks - 1))) {
     for (int i=0; i<type_count; i++) {
-      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "", -1));
+      TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], (ncclRedOp_t)0, "none", -1));
     }
   } else {
     printf("nRanks %d is not a power of 2, skipping\n", nRanks);

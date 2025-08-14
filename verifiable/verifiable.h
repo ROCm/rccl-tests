@@ -69,4 +69,9 @@ void ncclVerifiableApplyBias(
     void *elts, void* bias, intptr_t elt_n, int elt_ty, int red_op, intptr_t elt_ix0,
     cudaStream_t stream
 );
+
+#ifdef NCCL_VERIFIABLE_SELF_TEST
+void ncclVerifiableLaunchSelfTest();
+#endif
+
 #endif
