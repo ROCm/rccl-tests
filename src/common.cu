@@ -21,11 +21,15 @@
 #include "cuda.h"
 #include <vector>
 #include <utility>
+#include <errno.h>     /* program_invocation_short_name */
 
 //#define DEBUG_PRINT
 
 #include "verifiable.h"
 #include "git_version.h"
+
+#define DIVUP(x, y) \
+    (((x)+(y)-1)/(y))
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 int32_t gpu_block3;
@@ -1446,6 +1450,7 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
+  PRINT("# Collective test starting: %s\n", program_invocation_short_name);
   PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
@@ -1488,10 +1493,14 @@ testResult_t run() {
   PRINT("%s", line);
 #endif
 
+  // Reserve 1GiB of memory for each 16GiB installed, but limit to a max of 4GiB
+  const size_t GB = (1ULL << 30);
+  size_t reserveMem =  std::min(DIVUP(maxMem, 16*GB) * 1*GB, 4*GB);
   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
-  size_t memMaxBytes = (maxMem - (1<<30)) / (datacheck ? 3 : 2);
+  size_t memMaxBytes = (maxMem - reserveMem - 1*GB) / (datacheck ? 3 : 2);
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
+    if (minBytes > maxBytes) minBytes = maxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
   }
 
@@ -1723,6 +1732,7 @@ testResult_t run() {
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
   PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("#\n");
+  PRINT("# Collective test concluded: %s\n", program_invocation_short_name);
 #ifdef MPI_SUPPORT
   MPI_Comm_free(&mpi_comm);
   MPI_Finalize();
