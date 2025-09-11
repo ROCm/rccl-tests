@@ -21,7 +21,7 @@ function(add_rccl_test TEST)
     # Create a custom command to create hipified source code
     add_custom_command(
         OUTPUT ${HIP_FILE}
-        COMMAND mkdir -p ${HIP_FILE_DIR} && $ ${hipify-perl_executable} -quiet-warnings ${SOURCE_DIR}/${TEST_SOURCE} -o ${HIP_FILE}
+        COMMAND mkdir -p ${HIP_FILE_DIR} && $ ${hipify-perl_executable} ${HIPIFY_PL_FLAGS} ${SOURCE_DIR}/${TEST_SOURCE} -o ${HIP_FILE}
         MAIN_DEPENDENCY ${TEST_SOURCE}
         COMMENT "Hipifying ${TEST_SOURCE} -> ${HIP_FILE}"
     )
@@ -82,6 +82,15 @@ set(COMMON_FILES
 # Hipify common files (copy of source generated into hipify directory)
 #==================================================================================================
 find_program(hipify-perl_executable hipify-perl)
+if(hipify-perl_executable)
+  set(HIPIFY_PL_FLAGS "-quiet-warnings")
+else()
+  find_program(hipify-perl_executable hipify-clang)
+  if(hipify-perl_executable)
+    message(STATUS "hipify-perl is not found/deprecated using hipify-clang")
+  endif()
+  set(HIPIFY_PL_FLAGS "")
+endif()
 set(HIPIFY_DIR "${CMAKE_CURRENT_BINARY_DIR}/hipify")
 set(SOURCE_DIR "${CMAKE_SOURCE_DIR}/src")
 
@@ -103,7 +112,7 @@ foreach(COMMON_FILE ${COMMON_FILES})
   # Create a custom command to create hipified source code
   add_custom_command(
     OUTPUT ${HIP_FILE}
-    COMMAND mkdir -p ${HIPIFY_DIR} && $ ${hipify-perl_executable} -quiet-warnings ${SOURCE_DIR}/${COMMON_FILE} -o ${HIP_FILE}
+    COMMAND mkdir -p ${HIPIFY_DIR} && $ ${hipify-perl_executable} ${HIPIFY_PL_FLAGS} ${SOURCE_DIR}/${COMMON_FILE} -o ${HIP_FILE}
     MAIN_DEPENDENCY ${COMMON_FILE}
     COMMENT "Hipifying ${COMMON_FILE} -> ${HIP_FILE}"
   )
