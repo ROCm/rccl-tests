@@ -16,9 +16,14 @@ CUSTOM_RCCL_LIB ?= ""
 
 HIPCC ?= $(ROCM_PATH)/bin/amdclang++
 HIPCONFIG = $(ROCM_PATH)/bin/hipconfig
-HIPIFY_PL = $(ROCM_PATH)/bin/hipify-perl
-HIPIFY_PL_FLAGS = -quiet-warnings
 CXX = $(HIPCC)
+# HIPIFY PL Deprecation Handling
+HIPIFY_PL_EXE=$(ROCM_PATH)/bin/hipify-perl
+HIPIFY_CL_EXE=$(ROCM_PATH)/bin/hipify-clang
+HIPIFY_PL_FLAGS = -quiet-warnings
+HIPIFY_CL_FLAGS = ""
+HIPIFY_EXE = $(shell if [ -f $(HIPIFY_PL_EXE) ];then echo "$(HIPIFY_PL_EXE)"; else echo "$(HIPIFY_CL_EXE)";fi)
+HIPIFY_EXE_FLAGS = $(shell if [ -f $(HIPIFY_PL_EXE) ];then echo "$(HIPIFY_PL_FLAGS)"; else echo "$(HIPIFY_CL_FLAGS)";fi)
 
 HIPCUFLAGS := -std=c++14
 LDFLAGS    :=
@@ -35,11 +40,6 @@ HIP_VERSION = $(strip $(shell which $(HIPCONFIG) >/dev/null && $(HIPCONFIG) --ve
 HIP_MAJOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 1)
 HIP_MINOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 2)
 
-# TODO: Check HIPIFY_PL deprecated and use hipify-clang
-#  HIPIFY_PL = $(ROCM_PATH)/bin/hipify-clang
-#  HIPIFY_PL_FLAGS = ""
-#  $(shell echo "hipify-perl is not found/deprecated using hipify-clang.")
-#fi
 
 # Better define GPU_TARGETS in your environment to the minimal set
 # of archs to reduce compile time.
@@ -166,12 +166,12 @@ $(GIT_VERSION_FILE):
 ${HIPIFY_DIR}/%.cu.cpp: %.cu
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	${HIPIFY_PL} ${HIPIFY_PL_FLAGS} $< > $@
+	${HIPIFY_EXE} ${HIPIFY_EXE_FLAGS} $< > $@
 
 ${HIPIFY_DIR}/%.h: %.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	${HIPIFY_PL} ${HIPIFY_PL_FLAGS} $< > $@
+	${HIPIFY_EXE} ${HIPIFY_EXE_FLAGS} $< > $@
 
 .PRECIOUS: ${DST_DIR}/%.o
 
