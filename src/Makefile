@@ -16,6 +16,8 @@ CUSTOM_RCCL_LIB ?= ""
 
 HIPCC ?= $(ROCM_PATH)/bin/amdclang++
 HIPCONFIG = $(ROCM_PATH)/bin/hipconfig
+HIPIFY_PL_EXE=$(ROCM_PATH)/bin/hipify-perl
+HIPIFY_PL_FLAGS = -quiet-warnings
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
@@ -158,12 +160,12 @@ $(GIT_VERSION_FILE):
 ${HIPIFY_DIR}/%.cu.cpp: %.cu
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 ${HIPIFY_DIR}/%.h: %.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 .PRECIOUS: ${DST_DIR}/%.o
 
