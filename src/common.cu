@@ -22,7 +22,7 @@
 #include <vector>
 #include <utility>
 #include <errno.h>     /* program_invocation_short_name */
-
+#include <dlfcn.h>
 //#define DEBUG_PRINT
 
 #include "verifiable.h"
@@ -34,6 +34,24 @@
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 int32_t gpu_block3;
 size_t cache_bytes = 192 * 1024 * 1024; // Use 192MB
+
+rcclTestsGetAlgoInfo_t rcclTestsGetAlgoInfo = NULL;
+rcclTestsGetProtocolName_t rcclTestsGetProtocolName = NULL;
+rcclTestsGetAlgoName_t rcclTestsGetAlgoName= NULL;
+static void loadRcclSyms() {
+  static void* handle = NULL;
+  const char* libname = "librccl.so";
+  if (!handle) {
+    handle = dlopen(libname, RTLD_LAZY | RTLD_LOCAL);
+      if (!handle) {
+        fprintf(stderr, "dlopen failed: %s\n", dlerror());
+        return;
+      }
+  }
+  rcclTestsGetAlgoInfo      = (rcclTestsGetAlgoInfo_t)     dlsym(handle, "rcclGetAlgoInfo");
+  rcclTestsGetAlgoName      = (rcclTestsGetAlgoName_t)     dlsym(handle,  "rcclGetAlgoName");
+  rcclTestsGetProtocolName  = (rcclTestsGetProtocolName_t) dlsym(handle,  "rcclGetProtocolName");
+}
 
 // RCCL_FLOAT8 support
 bool rccl_float8_useFnuz = false;
@@ -109,6 +127,7 @@ static int nccltype = ncclFloat;
 static int ncclroot = 0;
 static int parallel_init = 0;
 static int blocking_coll = 0;
+static int output_algo_proto_channels = 0;
 static int memorytype = 0;
 static uint32_t cumask[4];
 static int streamnull = 0;
@@ -944,8 +963,21 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         TESTCHECK(BenchTime(args, type, op, root, 0));
         usleep(delay_inout_place);
       }
-        if (enable_in_place)
+      if (enable_in_place)
         TESTCHECK(BenchTime(args, type, op, root, 1));
+      if(output_algo_proto_channels) {
+        if(args->collTest->getAlgoProtoChannels) {
+          int algo, proto, nchannels;
+          const char* algoName = NULL;
+          const char* protoName = NULL;
+          TESTCHECK(args->collTest->getAlgoProtoChannels(args->comms[0], args->nbytes / wordSize(type), type, &algo, &proto, &nchannels));
+          NCCLCHECK(rcclTestsGetAlgoName(algo, &algoName));
+          NCCLCHECK(rcclTestsGetProtocolName(proto, &protoName));
+          PRINT("%8s  %8s  %10d", algoName, protoName, nchannels);
+        } else {
+          PRINT("%8s  %8s  %10s","N/A", "N/A", "N/A");
+        }
+      }
       PRINT("\n");
     }
     --repeat;
@@ -1108,7 +1140,7 @@ int main(int argc, char* argv[]) {
     }
     #endif
   #endif
-
+  loadRcclSyms();
   // Parse args
   double parsed;
   int longindex;
@@ -1135,14 +1167,15 @@ int main(int argc, char* argv[]) {
     {"report_cputime", required_argument, 0, 'C'},
     {"average", required_argument, 0, 'a'},
     {"local_register", required_argument, 0, 'R'},
-    {"memory_type", required_argument, 0, 'y'},       //RCCL
-    {"cumask", required_argument, 0, 'u'},            //RCCL
-    {"out_of_place", required_argument, 0, 'O'},      //RCCL
-    {"delay_inout_place", required_argument, 0, 'q'}, //RCCL
-    {"cache_flush", required_argument, 0, 'F'},       //RCCL
-    {"rotating_tensor", required_argument, 0, 'E'},   //RCCL
-    {"output_file", required_argument, 0, 'x'},       //RCCL
-    {"output_format", required_argument, 0, 'Z'},     //RCCL
+    {"memory_type", required_argument, 0, 'y'},                     //RCCL
+    {"cumask", required_argument, 0, 'u'},                          //RCCL
+    {"out_of_place", required_argument, 0, 'O'},                    //RCCL
+    {"delay_inout_place", required_argument, 0, 'q'},               //RCCL
+    {"cache_flush", required_argument, 0, 'F'},                     //RCCL
+    {"rotating_tensor", required_argument, 0, 'E'},                 //RCCL
+    {"output_file", required_argument, 0, 'x'},                     //RCCL
+    {"output_format", required_argument, 0, 'Z'},                   //RCCL
+    {"output_algo_proto_channels", required_argument, 0, 'M'},      //RCCL
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -1150,7 +1183,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:M:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1289,6 +1322,10 @@ int main(int argc, char* argv[]) {
         break;
       case 'Z':
         output_format = optarg;
+        break;
+      case 'M':
+        output_algo_proto_channels = strtol(optarg, NULL, 0);
+        if(rcclTestsGetAlgoInfo == NULL || rcclTestsGetAlgoName == NULL || rcclTestsGetProtocolName == NULL) output_algo_proto_channels = 0;
         break;
       case 'h':
       default:
@@ -1610,24 +1647,48 @@ testResult_t run() {
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  if (enable_out_of_place && enable_in_place) {
-  	PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-      	timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong");
-  	PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-      	"(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "");
-  } else if (enable_out_of_place) {
-	  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place      \n", "", "", "", "", "");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-        timeStr, "algbw", "busbw", "#wrong");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "");
+  if (enable_out_of_place) {
+    if (output_algo_proto_channels) {
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %8s  %8s  %10s\n",
+            "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong",
+            timeStr, "algbw", "busbw", "#wrong",
+            "algo", "proto", "nchannels");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s %8s  %8s  %10s\n",
+            "(B)", "(elements)", "", "", "",
+            "(us)", "(GB/s)", "(GB/s)", "",
+            "(us)", "(GB/s)", "(GB/s)", "",
+            "", "", "");
+    } else {
+      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n",
+            "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong",
+            timeStr, "algbw", "busbw", "#wrong");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n",
+            "(B)", "(elements)", "", "", "",
+            "(us)", "(GB/s)", "(GB/s)", "",
+            "(us)", "(GB/s)", "(GB/s)", "");
+    }
   } else {
-    PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n", "size", "count", "type", "redop", "root",
-        timeStr, "algbw", "busbw", "#wrong");
-        PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "");
+    if (output_algo_proto_channels) {
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %8s  %8s  %10s\n",
+            "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong",
+            "algo", "proto", "nchannels");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %8s  %8s  %10s\n",
+            "(B)", "(elements)", "", "", "",
+            "(us)", "(GB/s)", "(GB/s)", "",
+            "", "", "");
+    } else {
+      PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n",
+            "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n",
+            "(B)", "(elements)", "", "", "",
+            "(us)", "(GB/s)", "(GB/s)", "");
+    }
   }
   Reporter reporter(output_file, output_format);
 

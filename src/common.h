@@ -7,7 +7,6 @@
  ************************************************************************/
 #ifndef __COMMON_H__
 #define __COMMON_H__
-
 #include "rccl/rccl.h"
 #include <stdio.h>
 #include <cstdint>
@@ -107,6 +106,7 @@ struct testColl {
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
   testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
       ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
+  testResult_t (*getAlgoProtoChannels)(ncclComm_t comm, size_t count, ncclDataType_t type, int* algo, int* proto, int* nchannels);
 };
 extern struct testColl allReduceTest;
 extern struct testColl allGatherTest;
@@ -374,5 +374,25 @@ static int ncclstringtomtype (char *str) {
 extern int is_main_proc;
 extern thread_local int is_main_thread;
 #define PRINT if (is_main_thread) printf
+
+typedef enum {
+  ncclFuncBroadcast = 0,
+  ncclFuncReduce = 1,
+  ncclFuncAllGather = 2,
+  ncclFuncReduceScatter = 3,
+  ncclFuncAllReduce = 4,
+  ncclFuncAllReduceWithBias = 5,
+  ncclFuncSendRecv = 6,
+  ncclFuncSend = 7,
+  ncclFuncRecv = 8,
+  ncclFuncAllToAllPivot = 9,
+  ncclNumFuncs = 10
+} ncclFunc_t;
+
+typedef ncclResult_t (*rcclTestsGetAlgoInfo_t)(struct ncclComm* comm, ncclFunc_t coll, uint64_t count, ncclDataType_t dataType,
+                                          int collNetSupport, int nvlsSupport, int numPipeOps,
+                                          int* algo, int* protocol, int* maxChannels);
+typedef ncclResult_t (*rcclTestsGetAlgoName_t)(int algo, const char** algoName);
+typedef ncclResult_t (*rcclTestsGetProtocolName_t)(int protocol, const char** protocolName);
 
 #endif
