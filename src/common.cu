@@ -1647,8 +1647,9 @@ testResult_t run() {
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  if (enable_out_of_place) {
+  if (enable_out_of_place && enable_in_place) {
     if (output_algo_proto_channels) {
+      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
       PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %8s  %8s  %10s\n",
             "size", "count", "type", "redop", "root",
             timeStr, "algbw", "busbw", "#wrong",
@@ -1671,6 +1672,11 @@ testResult_t run() {
             "(us)", "(GB/s)", "(GB/s)", "");
     }
   } else {
+    if (enable_out_of_place) {
+      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place         \n", "", "", "", "", "");
+    } else {
+      PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
+    }
     if (output_algo_proto_channels) {
       PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %8s  %8s  %10s\n",
             "size", "count", "type", "redop", "root",
@@ -1681,7 +1687,6 @@ testResult_t run() {
             "(us)", "(GB/s)", "(GB/s)", "",
             "", "", "");
     } else {
-      PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
       PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n",
             "size", "count", "type", "redop", "root",
             timeStr, "algbw", "busbw", "#wrong");
