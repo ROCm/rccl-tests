@@ -1644,56 +1644,39 @@ testResult_t run() {
   }
 
   fflush(stdout);
-
+  const char* extra_col_str[3] = {"", "", ""};
+  if (output_algo_proto_channels) {
+    extra_col_str[0] = "algo";
+    extra_col_str[1] = "proto";
+    extra_col_str[2] = "nchannels";
+  }
+  const char* header_col_str[3] = {"           out-of-place                       in-place          ",
+                                   "           out-of-place         ","           in-place          "};
+  int header_index =(enable_out_of_place && enable_in_place) ? 0 : (enable_out_of_place ? 1 : 2);
   const char* timeStr = report_cputime ? "cputime" : "time";
+
   PRINT("#\n");
+  PRINT("# %10s  %12s  %8s  %6s  %6s%s\n", "", "", "", "", "", header_col_str[header_index]);
   if (enable_out_of_place && enable_in_place) {
-    if (output_algo_proto_channels) {
-      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
       PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %8s  %8s  %10s\n",
             "size", "count", "type", "redop", "root",
             timeStr, "algbw", "busbw", "#wrong",
             timeStr, "algbw", "busbw", "#wrong",
-            "algo", "proto", "nchannels");
+            extra_col_str[0], extra_col_str[1],  extra_col_str[2]);
       PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s %8s  %8s  %10s\n",
             "(B)", "(elements)", "", "", "",
             "(us)", "(GB/s)", "(GB/s)", "",
             "(us)", "(GB/s)", "(GB/s)", "",
             "", "", "");
-    } else {
-      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s\n",
-            "size", "count", "type", "redop", "root",
-            timeStr, "algbw", "busbw", "#wrong",
-            timeStr, "algbw", "busbw", "#wrong");
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s\n",
-            "(B)", "(elements)", "", "", "",
-            "(us)", "(GB/s)", "(GB/s)", "",
-            "(us)", "(GB/s)", "(GB/s)", "");
-    }
   } else {
-    if (enable_out_of_place) {
-      PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place         \n", "", "", "", "", "");
-    } else {
-      PRINT("# %10s  %12s  %8s  %6s  %6s           in-place          \n", "", "", "", "", "");
-    }
-    if (output_algo_proto_channels) {
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %8s  %8s  %10s\n",
-            "size", "count", "type", "redop", "root",
-            timeStr, "algbw", "busbw", "#wrong",
-            "algo", "proto", "nchannels");
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %8s  %8s  %10s\n",
-            "(B)", "(elements)", "", "", "",
-            "(us)", "(GB/s)", "(GB/s)", "",
-            "", "", "");
-    } else {
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s\n",
-            "size", "count", "type", "redop", "root",
-            timeStr, "algbw", "busbw", "#wrong");
-      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s\n",
-            "(B)", "(elements)", "", "", "",
-            "(us)", "(GB/s)", "(GB/s)", "");
-    }
+    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s %8s  %8s  %10s\n",
+          "size", "count", "type", "redop", "root",
+          timeStr, "algbw", "busbw", "#wrong",
+          extra_col_str[0], extra_col_str[1],  extra_col_str[2]);
+    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %8s  %8s  %10s\n",
+          "(B)", "(elements)", "", "", "",
+          "(us)", "(GB/s)", "(GB/s)", "",
+          "", "", "");
   }
   Reporter reporter(output_file, output_format);
 
