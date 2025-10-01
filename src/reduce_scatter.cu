@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   size_t base = (count/nranks) & -(16/eltSize);
@@ -35,6 +36,13 @@ testResult_t ReduceScatterInitData(struct threadArgs* args, ncclDataType_t type,
   return testSuccess;
 }
 
+testResult_t  ReduceScatterGetAlgoProtoChannels(ncclComm_t comm, size_t count, ncclDataType_t type, int* algo, int* proto, int* nchannels) {
+  if(rcclTestsGetAlgoInfo == NULL) return testInternalError;
+  NCCLCHECK(rcclTestsGetAlgoInfo(comm, ncclFuncReduceScatter , count, type , 0, 0, 1, algo, proto, nchannels));
+  return testSuccess;
+}
+
+
 void ReduceScatterGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize * nranks) / 1.0E9 / sec;
 
@@ -53,7 +61,8 @@ struct testColl reduceScatterTest = {
   ReduceScatterGetCollByteCount,
   ReduceScatterInitData,
   ReduceScatterGetBw,
-  ReduceScatterRunColl
+  ReduceScatterRunColl,
+  ReduceScatterGetAlgoProtoChannels
 };
 
 void ReduceScatterGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

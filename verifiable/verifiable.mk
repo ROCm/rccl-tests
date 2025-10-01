@@ -15,17 +15,17 @@ TEST_VERIFIABLE_LIBS      = $(TEST_VERIFIABLE_BUILDDIR)/libverifiable.so
 ${HIPIFY_DIR}/verifiable.cu.cpp: $(TEST_VERIFIABLE_SRCDIR)/verifiable.cu
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 ${HIPIFY_DIR}/verifiable.h: $(TEST_VERIFIABLE_SRCDIR)/verifiable.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 ${HIPIFY_DIR}/rccl_float8.h: $(TEST_VERIFIABLE_SRCDIR)/../src/rccl_float8.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 $(TEST_VERIFIABLE_BUILDDIR)/verifiable.o: $(HIPIFY_DIR)/verifiable.cu.cpp $(HIPIFY_DIR)/verifiable.h $(HIPIFY_DIR)/rccl_float8.h
 	@printf "Compiling %s\n" $@

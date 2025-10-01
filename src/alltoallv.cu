@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 #define USE_RCCL_GATHER_SCATTER
 
@@ -156,7 +157,8 @@ struct testColl alltoAllTest = {
   AlltoAllvGetCollByteCount,
   AlltoAllvInitData,
   AlltoAllvGetBw,
-  AlltoAllvRunColl
+  AlltoAllvRunColl,
+  NULL
 };
 
 void AlltoAllvGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

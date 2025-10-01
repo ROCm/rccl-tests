@@ -72,6 +72,7 @@ set(COMMON_FILES
   common.h
   common.cu
   nccl1_compat.h
+  rccl_compat.h
   rccl_float8.h
   timer.h
   timer.cc

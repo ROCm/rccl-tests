@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void SendRecvGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = count;
@@ -64,7 +65,8 @@ struct testColl sendRecvTest = {
   SendRecvGetCollByteCount,
   SendRecvInitData,
   SendRecvGetBw,
-  SendRecvRunColl
+  SendRecvRunColl,
+  NULL
 };
 
 void SendRecvGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

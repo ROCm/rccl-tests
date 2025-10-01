@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void ReduceGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = count;
@@ -34,6 +35,13 @@ testResult_t ReduceInitData(struct threadArgs* args, ncclDataType_t type, ncclRe
   return testSuccess;
 }
 
+testResult_t  ReduceGetAlgoProtoChannels(ncclComm_t comm, size_t count, ncclDataType_t type, int* algo, int* proto, int* nchannels) {
+  if(rcclTestsGetAlgoInfo == NULL) return testInternalError;
+  NCCLCHECK(rcclTestsGetAlgoInfo(comm, ncclFuncReduce , count, type , 0, 0, 1, algo, proto, nchannels));
+  return testSuccess;
+}
+
+
 void ReduceGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize) / 1.0E9 / sec;
   *algBw = baseBw;
@@ -50,7 +58,8 @@ struct testColl reduceTest = {
   ReduceGetCollByteCount,
   ReduceInitData,
   ReduceGetBw,
-  ReduceRunColl
+  ReduceRunColl,
+  ReduceGetAlgoProtoChannels
 };
 
 void ReduceGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

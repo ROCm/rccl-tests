@@ -16,15 +16,20 @@ CUSTOM_RCCL_LIB ?= ""
 
 HIPCC ?= $(ROCM_PATH)/bin/amdclang++
 HIPCONFIG = $(ROCM_PATH)/bin/hipconfig
+HIPIFY_PL_EXE=$(ROCM_PATH)/bin/hipify-perl
+HIPIFY_PL_FLAGS = -quiet-warnings
 CXX = $(HIPCC)
 
 HIPCUFLAGS := -std=c++14
 LDFLAGS    :=
 HIPLDFLAGS :=
 
-MPI ?= 0        # Set to 1 to enable MPI support (multi-process/multi-node)
-NAME_SUFFIX ?=  # e.g. _mpi when using MPI=1
-DSO ?= 0        # Set to 1 to create and use libverifiable.so to reduce binary size
+# Set to 1 to enable MPI support (multi-process/multi-node)
+MPI ?= 0
+# e.g. Set to _mpi when using MPI=1
+NAME_SUFFIX ?=
+# Set to 1 to create and use libverifiable.so to reduce binary size
+DSO ?= 0
 
 HIP_VERSION = $(strip $(shell which $(HIPCONFIG) >/dev/null && $(HIPCONFIG) --version))
 HIP_MAJOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 1)
@@ -155,12 +160,12 @@ $(GIT_VERSION_FILE):
 ${HIPIFY_DIR}/%.cu.cpp: %.cu
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 ${HIPIFY_DIR}/%.h: %.h
 	@printf "Hipifying  %-35s > %s\n" $< $@
 	@mkdir -p ${HIPIFY_DIR}
-	hipify-perl -quiet-warnings $< > $@
+	${HIPIFY_PL_EXE} ${HIPIFY_PL_FLAGS} $< > $@
 
 .PRECIOUS: ${DST_DIR}/%.o
 

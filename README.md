@@ -148,6 +148,7 @@ All tests support the same set of arguments :
 * Parsing RCCL-Tests output
   * `-Z,--output_format <csv|json>` Parse RCCL-Tests output as a CSV or JSON. Default : disabled.
   * `-x,--output_file <output file name>` RCCL-Tests output file name. Default : disabled.
+  * `-M,--output_algo_proto_channels <0/1>` Report Algorithm/Protocol/Channels for each message size. Default : 0.
 
 ### Running multiple operations in parallel
 

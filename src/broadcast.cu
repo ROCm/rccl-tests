@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void BroadcastGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = count;
@@ -29,6 +30,12 @@ testResult_t BroadcastInitData(struct threadArgs* args, ncclDataType_t type, ncc
     TESTCHECK(InitData(args->expected[i], recvcount, 0, type, ncclSum, rep, 1, 0));
     CUDACHECK(cudaDeviceSynchronize());
   }
+  return testSuccess;
+}
+
+testResult_t  BroadcastGetAlgoProtoChannels(ncclComm_t comm, size_t count, ncclDataType_t type, int* algo, int* proto, int* nchannels) {
+  if(rcclTestsGetAlgoInfo == NULL) return testInternalError;
+  NCCLCHECK(rcclTestsGetAlgoInfo(comm, ncclFuncBroadcast , count, type , 0, 0, 1, algo, proto, nchannels));
   return testSuccess;
 }
 
@@ -60,7 +67,8 @@ struct testColl broadcastTest = {
   BroadcastGetCollByteCount,
   BroadcastInitData,
   BroadcastGetBw,
-  BroadcastRunColl
+  BroadcastRunColl,
+  BroadcastGetAlgoProtoChannels
 };
 
 void BroadcastGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void AllGatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   size_t base = (count/nranks) & -(16/eltSize);
@@ -36,6 +37,13 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
   return testSuccess;
 }
 
+testResult_t  AllGatherGetAlgoProtoChannels(ncclComm_t comm, size_t count, ncclDataType_t type, int* algo, int* proto, int* nchannels) {
+  if(rcclTestsGetAlgoInfo == NULL) return testInternalError;
+  NCCLCHECK(rcclTestsGetAlgoInfo(comm, ncclFunc_t::ncclFuncAllGather , count, type , 0, 0, 1, algo, proto, nchannels));
+  return testSuccess;
+}
+
+
 void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks) {
   double baseBw = (double)(count * typesize * nranks) / 1.0E9 / sec;
 
@@ -54,7 +62,8 @@ struct testColl allGatherTest = {
   AllGatherGetCollByteCount,
   AllGatherInitData,
   AllGatherGetBw,
-  AllGatherRunColl
+  AllGatherRunColl,
+  AllGatherGetAlgoProtoChannels
 };
 
 void AllGatherGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {

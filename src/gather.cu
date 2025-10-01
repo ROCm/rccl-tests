@@ -7,6 +7,7 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include "rccl_compat.h"
 
 void GatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = (count/nranks) & -(16/eltSize);
@@ -69,7 +70,8 @@ struct testColl gatherTest = {
   GatherGetCollByteCount,
   GatherInitData,
   GatherGetBw,
-  GatherRunColl
+  GatherRunColl,
+  NULL
 };
 
 void GatherGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {
