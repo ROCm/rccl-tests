@@ -4,7 +4,7 @@
 #
 # See LICENSE.txt for license information
 #
-#include common.mk
+include common.mk
 
 ROCM_PATH ?= /opt/rocm
 MPI_HOME ?= /usr/lib/x86_64-linux-gnu
