@@ -1083,9 +1083,14 @@ void applyBias1(
   #if HAVE_ncclBfloat16
   case ncclBfloat16: CASE_TY(hip_bfloat16)
   #endif
-  #if HAVE_ncclfp8
+  #if HAVE_ncclfp8_DEVICE || HIP_VERSION < 60300000
   case ncclFp8E4M3: CASE_TY(rccl_float8)
   case ncclFp8E5M2: CASE_TY(rccl_bfloat8)
+  #elif HAVE_ncclfp8_HOST
+  case ncclFloat8e4m3: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e4m3_fnuz) }
+  else { CASE_TY(__hip_fp8_e4m3) }
+  case ncclFloat8e5m2: if (rccl_float8_useFnuz) { CASE_TY(__hip_fp8_e5m2_fnuz) }
+  else { CASE_TY(__hip_fp8_e5m2) }
   #endif
   case ncclFloat32: CASE_TY(float)
   case ncclFloat64: CASE_TY(double)
