@@ -101,27 +101,28 @@ build_dir=./build
 rm -rf ${build_dir}
 
 if [[ -z ${rocm_dir} ]]; then
-    echo "ROCM_PATH does not exist at ${rocm_dir}. Defaulting to /opt/rocm"
+    echo "[WARN] ROCM_PATH does not exist at ${rocm_dir}. Defaulting to /opt/rocm"
     rocm_dir=/opt/rocm
 fi
 
 if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
-    echo "HIP Compiler does not exist at ${hip_compiler}. Please check the path."
-    echo "Defaulting to /opt/rocm/bin/amdclang++"
+    echo "[WARN] HIP Compiler does not exist at ${hip_compiler}. Please check the path."
+    echo "[WARN] - Falling back to ${rocm_dir}/bin/amdclang++"
     hip_compiler=${rocm_dir}/bin/amdclang++
 
     if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
-        echo "${hip_compiler} does not exist. Please be advised."
-	echo "Defaulting to /opt/rocm/bin/hipcc"
+        echo "[WARN] ${hip_compiler} does not exist. Please be advised."
+	echo "[WARN] - Falling back to ${rocm_dir}/bin/hipcc"
 	hip_compiler=${rocm_dir}/bin/hipcc
 
 	if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
-            echo "${hip_compiler} does not exist!. Please check your ROCm installation."
-	    echo "Cannot proceed with building rccl-tests!"
+            echo "[ERROR] ${hip_compiler} does not exist!. Please check your ROCm installation."
+	    echo "[ERROR] Cannot proceed with building rccl-tests!"
 	    exit 1
 	fi
     fi
 fi
+echo "[INFO] Compiling with ${hip_compiler}"
 
 if [[ -n ${gpu_targets} ]]; then
     GPU_TARGETS="GPU_TARGETS=${gpu_targets}"
@@ -129,13 +130,17 @@ fi
 
 if ($mpi_enabled); then
     if [[ ${mpi_dir} == "" ]]; then
-        echo "MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument."
+        echo "[ERROR] MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument."
         exit 1
     else
+	echo "[INFO] Compiling with MPI support (Using MPI from ${mpi_dir})"
+	echo
         make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so MPI=1 MPI_HOME=${mpi_dir} HIPCC=${hip_compiler} ${GPU_TARGETS} -j$(nproc)
     fi
 else
-    make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so HIP_COMPILER=${hip_compiler} ${GPU_TARGETS} -j$(nproc)
+    echo "[INFO] Compiling without MPI support (MPI support requires -m and --mpi_home)"
+    echo
+    make NCCL_HOME=${rccl_dir} CUSTOM_RCCL_LIB=${rccl_dir}/lib/librccl.so HIPCC=${hip_compiler} ${GPU_TARGETS} -j$(nproc)
 fi
 check_exit_code "$?"
 
