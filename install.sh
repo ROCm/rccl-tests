@@ -116,8 +116,8 @@ if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
     hip_compiler=${rocm_dir}/bin/hipcc
 
     if ! command -v ${hip_compiler} 2>&1 >/dev/null ; then
-      echo "[ERROR] ${hip_compiler} does not exist!. Please check your ROCm installation."
-      echo "[ERROR] Cannot proceed with building rccl-tests!"
+      echo "[ERROR] ${hip_compiler} does not exist!. Please check your ROCm installation." >&2
+      echo "[ERROR] Cannot proceed with building rccl-tests!" >&2
       exit 1
     fi
   fi
@@ -130,7 +130,7 @@ fi
 
 if ($mpi_enabled); then
   if [[ ${mpi_dir} == "" ]]; then
-    echo "[ERROR] MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument."
+    echo "[ERROR] MPI flag enabled but path to MPI installation not specified.  See --mpi_home command line argument." >&2
     exit 1
   else
     echo "[INFO] Compiling with MPI support (Using MPI from ${mpi_dir})"
