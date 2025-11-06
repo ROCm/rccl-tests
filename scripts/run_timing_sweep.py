@@ -124,7 +124,7 @@ def parse_rank_pid_mapping(stdout_output):
     rank_pid_map = {}
     
     for line in stdout_output.split('\n'):
-        if '# Rank' in line and 'Pid' in line:
+        if line.startswith('#') and 'Rank' in line and 'Pid' in line:
             parts = line.split()
             try:
                 rank_idx = parts.index('Rank') + 1
@@ -145,7 +145,7 @@ def run_benchmark_for_full_range(benchmark_name, num_ranks, min_size, max_size,
     """
     # Benchmark binary path
     benchmark_path = f"/work/lmeadows/rccl/rccl-tests/build/{benchmark_name}_perf"
-    
+
     if not os.path.exists(benchmark_path):
         print(f"Error: Benchmark not found: {benchmark_path}")
         return None

@@ -43,48 +43,6 @@ struct TransferResult {
     bool success;
 };
 
-// Get NUMA node for a GPU
-int getGpuNumaNode(int gpu_id) {
-    // For AMD MI300A, GPUs are typically associated with specific NUMA nodes
-    // This is a simplified mapping - in production you'd query the system
-    hipDeviceProp_t props;
-    HIP_CHECK(hipGetDeviceProperties(&props, gpu_id));
-
-    // MI300A systems often have GPUs distributed across NUMA nodes
-    // This mapping may need adjustment based on actual system topology
-    return gpu_id % 2;  // Assume alternating NUMA nodes, adjust as needed
-}
-
-// Set CPU and memory affinity for NUMA node
-void setNumaAffinity(int numa_node) {
-    // Use sched_setaffinity to bind to CPUs in the NUMA node
-    // and numactl-like memory policy
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-
-    // Get number of CPUs
-    int num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-
-    // For simplicity, assume NUMA node 0 has CPUs 0-31, node 1 has 32-63, etc.
-    // This is system-specific and should be queried properly
-    int cpus_per_node = num_cpus / 2;  // Assume 2 NUMA nodes
-    int cpu_start = numa_node * cpus_per_node;
-    int cpu_end = cpu_start + cpus_per_node;
-
-    for (int cpu = cpu_start; cpu < cpu_end; cpu++) {
-        CPU_SET(cpu, &cpuset);
-    }
-
-    if (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) != 0) {
-        std::cerr << "Warning: Failed to set CPU affinity for NUMA node " << numa_node << std::endl;
-    }
-
-    // Set memory policy to bind to NUMA node
-    // This requires libnuma, but for simplicity we'll use mbind or just rely on CPU affinity
-    std::cout << "[Rank " << numa_node << "] Set affinity to NUMA node " << numa_node
-              << " (CPUs " << cpu_start << "-" << cpu_end-1 << ")" << std::endl;
-}
-
 // Enable peer access between GPUs
 bool enablePeerAccess(int src_gpu, int dst_gpu) {
     int can_access = 0;
@@ -249,9 +207,8 @@ int main(int argc, char* argv[]) {
 
     int my_gpu = world_rank;
 
-    // Set NUMA affinity for this GPU
-    int numa_node = getGpuNumaNode(my_gpu);
-    setNumaAffinity(numa_node);
+    // We assume that numa affinity was already set for this rank
+    // using mpirun --bind-to or gpurun or similar.
 
     // Set GPU device for this rank
     HIP_CHECK(hipSetDevice(my_gpu));
@@ -269,7 +226,7 @@ int main(int argc, char* argv[]) {
     HIP_CHECK(hipGetDeviceProperties(&props, my_gpu));
 
     std::cout << "[Rank " << world_rank << "] GPU " << my_gpu << ": " << props.name
-              << " (NUMA node " << numa_node << ")" << std::endl;
+              <<  std::endl;
 
     // Synchronize all ranks
     MPI_CHECK(MPI_Barrier(MPI_COMM_WORLD));

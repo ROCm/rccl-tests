@@ -121,6 +121,9 @@ HIPIFY_DIR ?= $(BUILDDIR)/hipify
 
 .PRECIOUS: $(HIPIFY_DIR)/%.cu.cpp $(HIPIFY_DIR)/%.h
 
+ifeq ($(ROCP), 1)
+HIPCUFLAGS += -DUSE_ROCPROFILER
+endif
 ifeq ($(MPI), 1)
 HIPCUFLAGS += -DMPI_SUPPORT -I${MPI_HOME}/include -I${MPI_HOME}/include/openmpi -I${MPI_HOME}/openmpi/include -I${MPI_HOME}/openmpi/include/openmpi
 HIPLDFLAGS += -L${MPI_HOME}/lib -L${MPI_HOME}/openmpi/lib -lmpi

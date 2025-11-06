@@ -1,0 +1,5 @@
+MPI_HOME=/opt/openmpi-5.0.8-flangnew
+RCCL=/work/lmeadows/rccl/install
+
+export PATH=$HOME/.local/bin:$MPI_HOME/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LD_LIBRARY_PATH=$RCCL/lib:$MPI_HOME/lib

@@ -1,6 +1,6 @@
-export GPU_TARGETS=gfx950 
+export GPU_TARGETS=$(/opt/rocm/llvm/bin/amdgpu-arch | uniq)
 intercept-build \
 make \
-USE_ROCPRIFLER=1 \
-MPI=1 MPI_HOME=/opt/openmpi-5.0.8-Rel7.0.0 \
+ROCP=1 \
+MPI=1 MPIHOME=/opt/openmpi-5.0.8-flangnew \
 NCCL_HOME=/work/lmeadows/rccl/install
