@@ -1,0 +1,143 @@
+================================================================================
+ROOT CAUSE ANALYSIS: Timing Data Mismatch in reduce_scatter
+================================================================================
+Date: November 4, 2025
+Investigation: Understanding why CSV files contain sizes 16, 32, 64 when
+               benchmark was run with -b 128 (minimum 128 bytes)
+
+================================================================================
+FINDINGS
+================================================================================
+
+THE MYSTERY
+-----------
+CSV files in run_reduce_scatter_20251104_165116 contain:
+- Sizes: 16, 32, 64, 128, 256, ..., 134217728 (128 MiB)
+- 24 unique sizes
+- 100 entries per size (50 in-place + 50 out-of-place)
+- total_ranks=8 (correct)
+
+Metadata (run_metadata.json) claims:
+- Command: -b 128 -e 1073741824 (128 bytes to 1 GiB)
+- Expected sizes: 128, 256, 512, ..., 1073741824
+- 24 sizes expected (128 to 1 GiB)
+
+MISMATCH IDENTIFIED
+-------------------
+The CSV file contains data from 16 bytes to 128 MiB (24 sizes)
+The metadata describes a run from 128 bytes to 1 GiB (24 sizes)
+
+These are TWO DIFFERENT RUNS!
+
+ROOT CAUSE
+----------
+The CSV files were created by a DIFFERENT benchmark invocation than what
+run_timing_sweep.py recorded in the metadata.
+
+EVIDENCE
+--------
+
+1. File timestamps are consistent (created during the run)
+   - File birth: 2025-11-04 16:51:20
+   - Run start:  2025-11-04 16:51:16
+   - File is fresh, not from a previous run
+
+2. CSV contains exactly 24 sizes (16 to 128 MiB)
+   - This matches a run with -b 16 -e 134217728
+
+3. CSV shows total_ranks=8 (correct for the actual run)
+
+4. Metadata describes -b 128 -e 1073741824
+   - This would give sizes 128 to 1 GiB
+   - But CSV doesn't match this
+
+HYPOTHESIS: Multiple Benchmark Invocations
+-------------------------------------------
+
+Possible scenario:
+1. run_timing_sweep.py invoked reduce_scatter_perf with -b 128 -e 1G
+2. The benchmark executable INTERNALLY ran a different size range
+3. OR: There were multiple benchmark invocations and only one was recorded
+
+Alternative scenario:
+1. The benchmark was run TWICE in the same directory
+2. First run: -b 16 -e 128M (wrote CSV files)
+3. Second run: -b 128 -e 1G (updated metadata, but CSV was in append mode)
+4. CSV contains data from BOTH runs
+
+VERIFICATION NEEDED
+-------------------
+
+To confirm, we need to:
+1. Check if run_timing_sweep.py invokes the benchmark multiple times
+2. Check if there's a warmup run that writes timing data
+3. Verify the benchmark only runs once per directory
+
+DEBUG OUTPUT FROM TEST RUN
+--------------------------
+
+When running with debug logging:
+- setupArgs is called for warmup (large and small sizes)
+- setupArgs is called for each benchmark size
+- BenchTime is ONLY called for benchmark sizes (not warmup)
+- Timing data is ONLY written from within BenchTime
+
+This confirms:
+- Warmup iterations do NOT write timing data
+- Only the main benchmark loop writes timing data
+- Each BenchTime call writes exactly iters*agg_iters entries
+
+ALIGNMENT ISSUE (SEPARATE PROBLEM)
+-----------------------------------
+
+For reduce_scatter with 8 ranks:
+- Requested 128 bytes → args->nbytes = 16 bytes (due to alignment mask)
+- Requested 256 bytes → args->nbytes = 32 bytes
+- Requested 512 bytes → args->nbytes = 64 bytes
+
+Formula: base = (count/nranks) & -(16/eltSize)
+
+For 128 bytes, 8 ranks, float (4 bytes):
+  count = 128/4 = 32 floats
+  base = (32/8) & -(16/4) = 4 & -4 = 4
+  args->nbytes = 4 * 4 = 16 bytes
+
+This explains WHY size 16 appears if the benchmark was run with -b 128,
+but it doesn't explain HOW it got into the CSV when the metadata says
+the run started at 128.
+
+CONCLUSION
+----------
+
+The CSV files in run_reduce_scatter_20251104_165116 contain data from a
+DIFFERENT run than what the metadata describes.
+
+Possible causes:
+1. Multiple benchmark invocations in the same directory (append mode)
+2. Metadata was written by a different run than the CSV
+3. Bug in run_timing_sweep.py that runs benchmark twice
+
+NEXT STEPS
+----------
+
+1. Review run_timing_sweep.py to check for multiple benchmark invocations
+2. Add logging to track when benchmark is invoked
+3. Consider using write mode ("w") instead of append mode ("a") for CSV
+4. OR: Delete CSV files before each benchmark run
+
+RECOMMENDATION
+--------------
+
+The safest fix is to DELETE old CSV files before running the benchmark:
+
+In run_timing_sweep.py, before running benchmark:
+    import glob
+    pattern = f"{output_dir}/{benchmark_name}_rank*.csv"
+    for f in glob.glob(pattern):
+        os.remove(f)
+        print(f"Removed old timing file: {f}")
+
+This ensures CSV files always match the current run.
+
+================================================================================
+

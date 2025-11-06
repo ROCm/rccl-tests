@@ -1,0 +1,88 @@
+================================================================================
+CORRECTED ANALYSIS: Wall-Clock vs Kernel Time Divergence
+================================================================================
+Date: November 4, 2025
+
+CORRECTION TO PREVIOUS ANALYSIS
+================================
+
+The "stale data" hypothesis was INCORRECT. The user correctly pointed out that
+the benchmark script creates a fresh directory for each run.
+
+ROOT CAUSE OF SIZES 16, 32, 64 IN reduce_scatter
+=================================================
+
+The extra sizes (16, 32, 64) in the CSV files are NOT stale data. They come
+from the ALIGNMENT MASK in ReduceScatterGetCollByteCount combined with warmup
+iterations that have timing collection enabled.
+
+Detailed Explanation:
+---------------------
+
+1. The benchmark is run with -b 128 (minimum size 128 bytes)
+
+2. In TimeTest() (line 1027-1043), there's a "Warm-up for small size" phase:
+   setupArgs(args->minbytes, type, args);  // args->minbytes = 128
+   
+3. setupArgs() calls ReduceScatterGetCollByteCount():
+   size_t base = (count/nranks) & -(16/eltSize);
+   
+4. For size=128, nranks=8, eltSize=4 (float):
+   count = 128/4 = 32 floats
+   base = (32/8) & -(16/4)
+        = 4 & -4
+        = 4 & 0xFFFFFFFC
+        = 4
+   paramcount = 4
+   args->nbytes = 4 * 4 = 16 bytes  ← REDUCED FROM 128 TO 16!
+
+5. Similarly:
+   - Requested 256 → Actual 32 bytes
+   - Requested 512 → Actual 64 bytes
+
+6. If timing collection is enabled during these warmup phases, the CSV files
+   will contain entries for sizes 16, 32, 64 even though the benchmark was
+   supposed to start at 128.
+
+QUESTION: Why is timing collection enabled during warmup?
+----------------------------------------------------------
+
+This needs further investigation. The warmup in TimeTest() should happen
+BEFORE any BenchTime() calls, and timing_results is only allocated inside
+BenchTime(). 
+
+Possible explanations:
+1. The warmup iterations are somehow triggering timing collection
+2. There's a code path I haven't identified yet
+3. The timing file is being written to from multiple places
+
+CONFIRMED: PIPELINING EXPLANATION IS STILL VALID
+=================================================
+
+The divergence between kernel and wall times at large sizes (2.6x-6.6x) is
+still explained by algorithmic pipelining, as documented in the previous
+analysis. This part of the analysis remains correct.
+
+Summary:
+--------
+- Kernel time = per-rank processing time
+- Wall time = collective completion time (critical path)
+- Ratio ≈ 6.6 for 8 ranks indicates 83% pipelining efficiency
+- This is EXPECTED BEHAVIOR for collective operations
+
+NEXT STEPS
+==========
+
+1. Trace the exact code path to understand when/why timing data is collected
+   for the warmup iterations
+
+2. Determine if this is a bug in the timing collection code or expected
+   behavior
+
+3. If it's a bug, fix it. If it's expected, document it.
+
+4. The analysis scripts should filter out sizes that don't match the
+   requested size range, or at minimum warn about them.
+
+================================================================================
+

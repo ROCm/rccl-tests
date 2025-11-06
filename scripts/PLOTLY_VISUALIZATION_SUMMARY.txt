@@ -1,0 +1,239 @@
+================================================================================
+PLOTLY VISUALIZATION GENERATION SUMMARY
+================================================================================
+Date: November 4, 2025
+Script: plot_size_vs_time_plotly.py
+Segmentation: BIC (Bayesian Information Criterion)
+Total Benchmarks: 12
+Total Visualizations: 12 HTML files
+
+================================================================================
+GENERATED VISUALIZATIONS
+================================================================================
+
+All files located in: /work/lmeadows/rccl/data/cv350-zts-gtu-e11-18/
+
+1. all_gather_size_vs_time_bic.html
+   - Directory: run_all_gather_20251104_165039
+   - Data points: 24
+   - Timing samples: 19,200 (8 ranks)
+   - Breakpoints: 512B, 2MiB
+   - BIC: 93.27
+
+2. all_reduce_size_vs_time_bic.html
+   - Directory: run_all_reduce_20251104_165031
+   - Data points: 28
+   - Timing samples: 22,400 (8 ranks)
+   - Breakpoints: 1KiB, 8MiB
+   - BIC: 88.59
+
+3. all_reduce_bias_size_vs_time_bic.html
+   - Directory: run_all_reduce_bias_20251104_165201
+   - Data points: 28
+   - Timing samples: 22,400 (8 ranks)
+   - Breakpoints: 512KiB, 128MiB
+   - BIC: 69.43
+
+4. alltoall_size_vs_time_bic.html
+   - Directory: run_alltoall_20251104_165124
+   - Data points: 24
+   - Timing samples: 19,200 (8 ranks)
+   - Breakpoints: 1MiB, 128MiB
+   - BIC: 14.12
+
+5. alltoallv_size_vs_time_bic.html
+   - Directory: run_alltoallv_20251104_165153
+   - Data points: 24 (parsed from 28 entries)
+   - Timing samples: 22,400 (8 ranks)
+   - Breakpoints: 1MiB, 4MiB
+   - BIC: 57.07
+
+6. broadcast_size_vs_time_bic.html
+   - Directory: run_broadcast_20251104_165047
+   - Data points: 28
+   - Timing samples: 22,400 (8 ranks)
+   - Breakpoints: 512KiB, 64MiB
+   - BIC: 138.62
+
+7. gather_size_vs_time_bic.html
+   - Directory: run_gather_20251104_165102
+   - Data points: 24
+   - Timing samples: 19,200 (8 ranks)
+   - Breakpoints: 2MiB, 256MiB
+   - BIC: 27.81
+
+8. hypercube_size_vs_time_bic.html
+   - Directory: run_hypercube_20251104_165132
+   - Data points: 24
+   - Timing samples: 19,200 (8 ranks)
+   - Breakpoints: 512KiB, 256MiB
+   - BIC: 111.83
+
+9. reduce_size_vs_time_bic.html
+   - Directory: run_reduce_20251104_165054
+   - Data points: 28
+   - Timing samples: 22,400 (8 ranks)
+   - Breakpoints: 512KiB, 256MiB
+   - BIC: 146.57
+
+10. reduce_scatter_size_vs_time_bic.html
+    - Directory: run_reduce_scatter_20251104_165116
+    - Data points: 24
+    - Timing samples: 19,200 (8 ranks)
+    - Breakpoints: 1MiB, 64MiB
+    - BIC: 72.32
+
+11. scatter_size_vs_time_bic.html
+    - Directory: run_scatter_20251104_165109
+    - Data points: 24
+    - Timing samples: 19,200 (8 ranks)
+    - Breakpoints: 512B, 2MiB
+    - BIC: -3.40
+
+12. sendrecv_size_vs_time_bic.html
+    - Directory: run_sendrecv_20251104_165142
+    - Data points: 28
+    - Timing samples: 22,400 (8 ranks)
+    - Breakpoints: 256KiB, 64MiB
+    - BIC: 87.30
+
+================================================================================
+VISUALIZATION FEATURES
+================================================================================
+
+Each interactive HTML chart includes:
+
+1. **Data Traces:**
+   - Kernel mean time (blue line)
+   - ±1σ confidence band (light blue shaded area)
+   - Wall-clock time (orange points)
+
+2. **Segment Boundaries:**
+   - Red dashed vertical lines at breakpoints
+   - Labels showing segment transitions (e.g., "Seg 0|1")
+   - Lines render above data traces for visibility
+
+3. **Axis Formatting:**
+   - X-axis: Log2 scale with power-of-2 labels (2^3, 2^10, etc.)
+   - Y-axis: Log scale with scientific notation (1e2, 1e3, etc.)
+   - Hover tooltips show exact values
+
+4. **Interactive Controls:**
+   - Zoom: Click and drag
+   - Pan: Shift + drag
+   - Reset: Double-click
+   - Toggle traces: Click legend items
+   - Save: Camera icon (exports to PNG)
+
+5. **Layout:**
+   - Centered title with benchmark name
+   - Legend positioned top-right
+   - Grid lines for readability
+   - Responsive sizing
+
+================================================================================
+SEGMENT INTERPRETATION GUIDE
+================================================================================
+
+Segment 0 (Small Messages):
+- Latency-dominated regime
+- Fixed overhead dominates
+- Often shows log-linear behavior
+- High variability (noisy)
+
+Segment 1 (Medium Messages):
+- Transition regime
+- Algorithm changes (e.g., ring → tree)
+- Linear scaling begins
+- Moderate slope
+
+Segment 2 (Large Messages):
+- Bandwidth-dominated regime
+- Network/memory bandwidth is bottleneck
+- Linear scaling with consistent slope
+- Predictable performance (R² ≈ 1.0)
+
+================================================================================
+VIEWING INSTRUCTIONS
+================================================================================
+
+To view the visualizations:
+
+1. **Local viewing:**
+   Open any HTML file in a web browser:
+   $ firefox /work/lmeadows/rccl/data/cv350-zts-gtu-e11-18/run_all_reduce_20251104_165031/all_reduce_size_vs_time_bic.html
+
+2. **Remote viewing:**
+   Copy files to local machine:
+   $ scp user@host:/work/lmeadows/rccl/data/cv350-zts-gtu-e11-18/run_*/\*_bic.html ./
+
+3. **Batch viewing:**
+   Open all charts:
+   $ firefox /work/lmeadows/rccl/data/cv350-zts-gtu-e11-18/run_*/*_bic.html
+
+================================================================================
+FILE SIZES
+================================================================================
+
+All HTML files: 12-13 KB each
+Total size: ~150 KB for all 12 visualizations
+
+The files are self-contained (include Plotly.js library inline) and can be
+viewed offline without internet connection.
+
+================================================================================
+RELATED FILES
+================================================================================
+
+For each benchmark run directory, you'll find:
+
+1. Raw Data:
+   - {benchmark}_rank*.csv (8 files, individual kernel timings)
+   - {benchmark}_benchmark_output.txt (wall-clock times)
+
+2. Analysis:
+   - {benchmark}_timing_analysis.csv (statistical summary)
+   - {benchmark}_segmentation_bic.json (segment metadata)
+
+3. Visualizations:
+   - {benchmark}_size_vs_time_bic.html (interactive Plotly chart)
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+Suggested follow-up analyses:
+
+1. Generate static Matplotlib charts:
+   $ python3 plot_size_vs_time.py --run-dir <directory>
+
+2. Generate per-launch boxplots:
+   $ python3 plot_per_launch_boxplots.py --run-dir <directory>
+
+3. Generate segment boxplots:
+   $ python3 plot_segment_boxplots.py --run-dir <directory>
+
+4. Compare segmentations:
+   $ python3 compare_segmentations.py --run-dir <directory>
+
+================================================================================
+TECHNICAL DETAILS
+================================================================================
+
+Script: plot_size_vs_time_plotly.py
+Algorithm: Piecewise Linear Regression with BIC
+Segmentation: Exactly 3 segments per benchmark
+Data source: Individual kernel timings (GPU-side) + benchmark output (CPU-side)
+Aggregation: Mean and standard deviation across 8 MPI ranks
+Iterations: 400 warmup + 400 timed per size
+
+BIC Formula: BIC = n·log(RSS/n) + k·log(n)
+- Lower BIC = Better model
+- Balances fit quality vs. complexity
+
+R² Formula: R² = 1 - (RSS/TSS)
+- R² = 1.0: Perfect fit
+- R² > 0.9: Excellent fit
+- R² < 0.7: Noisy data (expected for small messages)
+
+================================================================================

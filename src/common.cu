@@ -23,10 +23,21 @@
 #include <utility>
 #include <errno.h>     /* program_invocation_short_name */
 #include <dlfcn.h>
-//#define DEBUG_PRINT
+#include <time.h>
 
 #include "verifiable.h"
 #include "git_version.h"
+
+#ifdef USE_ROCPROFILER
+static FILE* timestamp_file = nullptr;
+
+static uint64_t timestamp_ns()
+{
+  timespec ts{};
+  int res = clock_gettime(CLOCK_BOOTTIME, &ts);
+  return 1000000000UL*ts.tv_sec + ts.tv_nsec;
+}
+#endif
 
 #define DIVUP(x, y) \
     (((x)+(y)-1)/(y))
@@ -675,6 +686,33 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   Barrier(args);
 
+#ifdef USE_ROCPROFILER
+  // Open timestamp file on first call
+  if (timestamp_file == nullptr) {
+    char timestamp_filename[256];
+    snprintf(timestamp_filename, sizeof(timestamp_filename), "rank_%d_timestamps.txt", args->proc);
+    timestamp_file = fopen(timestamp_filename, "w");
+    if (timestamp_file == nullptr) {
+      fprintf(stderr, "Error: Could not open timestamp file: %s\n", timestamp_filename);
+    }
+  }
+  
+  // Write Tstart event
+  if (timestamp_file) {
+    fprintf(timestamp_file,
+            "Tstart %d: %lu: %s_size_%lu_%s_type_%s_op_%s_root_%d\n",
+            args->proc,
+            timestamp_ns(),
+            args->collTest->name,
+            args->nbytes,
+            in_place ? "inp" : "oop",
+            test_typenames[type],
+            test_opnames[op],
+            root);
+    fflush(timestamp_file);
+  }
+#endif
+
 #if HIP_VERSION >= 50221310
   std::vector<cudaGraph_t> graphs(args->nGpus);
   std::vector<cudaGraphExec_t> graphExec(args->nGpus);
@@ -723,6 +761,14 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double cputimeSec = tim.elapsed()/(iters*agg_iters);
   TESTCHECK(completeColl(args));
+
+#ifdef USE_ROCPROFILER
+  // Write Tend event
+  if (timestamp_file) {
+    fprintf(timestamp_file, "Tend %d: %lu\n", args->proc, timestamp_ns());
+    fflush(timestamp_file);
+  }
+#endif
 
   double deltaSec = tim.elapsed();
   deltaSec = deltaSec/(iters*agg_iters);
@@ -989,6 +1035,14 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     --repeat;
     ++iter;
   } while(repeat != 0);
+
+#ifdef USE_ROCPROFILER
+  // Close timestamp file
+  if (timestamp_file) {
+    fclose(timestamp_file);
+    timestamp_file = nullptr;
+  }
+#endif
 
   return testSuccess;
 }

@@ -1,0 +1,6 @@
+export GPU_TARGETS=gfx950 
+intercept-build \
+make \
+USE_ROCPRIFLER=1 \
+MPI=1 MPI_HOME=/opt/openmpi-5.0.8-Rel7.0.0 \
+NCCL_HOME=/work/lmeadows/rccl/install

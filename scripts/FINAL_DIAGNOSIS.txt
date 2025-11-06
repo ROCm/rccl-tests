@@ -1,0 +1,88 @@
+================================================================================
+FINAL DIAGNOSIS: Wall-Clock Timing Mismatch Issue
+================================================================================
+
+PROBLEM SUMMARY
+===============
+CSV timing files for reduce_scatter contain data for sizes 16, 32, 64 bytes,
+but these sizes have no corresponding wall-clock times in the benchmark output
+because the benchmark was run with -b 128 (minimum 128 bytes).
+
+ROOT CAUSE
+==========
+The CSV files are opened in APPEND mode ("a") in common.cu line 895.
+
+If CSV files existed from a PREVIOUS run (manual test, failed run, etc.),
+the new benchmark run APPENDS to them rather than overwriting.
+
+Result: CSV files contain data from MULTIPLE runs, but metadata and benchmark
+output only describe the MOST RECENT run.
+
+EVIDENCE
+========
+
+1. Benchmark output confirms: -b 128, minBytes 128
+2. CSV contains sizes: 16, 32, 64, 128, ..., 134217728 (24 sizes)
+3. Expected from -b 128 -e 1G: 128, 256, ..., 1073741824 (24 sizes)
+4. CSV has 16-128M (different range than metadata describes)
+5. File timestamps show fresh creation during the run
+6. Debug logging confirms BenchTime only called for sizes >= 128
+7. Warmup iterations do NOT write timing data
+
+CONCLUSION
+==========
+The CSV files contain leftover data from a PREVIOUS manual test or run that
+used -b 16 or had alignment issues that resulted in size 16 being tested.
+
+The current run (with -b 128) APPENDED its data to these existing files.
+
+SOLUTION
+========
+Delete old CSV files before each benchmark run.
+
+Add to run_timing_sweep.py before running benchmark:
+
+    def cleanup_old_timing_files(output_dir, benchmark_name):
+        """Remove any existing timing CSV files before running benchmark"""
+        import glob
+        pattern = f"{output_dir}/{benchmark_name}_rank*.csv"
+        for f in glob.glob(pattern):
+            try:
+                os.remove(f)
+                print(f"Removed old timing file: {f}")
+            except OSError:
+                pass  # File doesn't exist or can't be removed
+
+Call this before run_benchmark_for_full_range().
+
+ALTERNATIVE: Change append mode to write mode in common.cu
+-----------------------------------------------------------
+Change line 895 from:
+    FILE* timing_file = fopen(timing_filename, "a");  // Append mode
+
+To:
+    FILE* timing_file = fopen(timing_filename, "w");  // Write mode
+
+BUT this would require running the entire sweep in ONE benchmark invocation,
+which is already the case. So this is actually BETTER than append mode.
+
+RECOMMENDATION
+==============
+Use BOTH fixes:
+1. Delete old CSV files in run_timing_sweep.py (defensive)
+2. Change to write mode in common.cu (correct behavior)
+
+This ensures:
+- Fresh CSV files for each run
+- No leftover data from previous runs
+- CSV always matches metadata
+
+ALIGNMENT ISSUE (SEPARATE)
+===========================
+The alignment mask in ReduceScatterGetCollByteCount can reduce requested
+sizes, but this is handled correctly by run_timing_sweep.py's
+calculate_min_size_for_benchmark() function.
+
+This is NOT the cause of the 16/32/64 entries.
+
+================================================================================

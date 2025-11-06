@@ -1,0 +1,249 @@
+================================================================================
+ROCProfiler Integration - Executive Summary
+================================================================================
+
+PROBLEM
+=======
+Need an alternative to HIP events for collecting per-kernel timing data that:
+1. Correlates kernel launches with benchmark wall-clock measurements
+2. Works with MPI multi-rank runs
+3. Can collect additional GPU metrics (not just timing)
+4. Doesn't require modifying RCCL source code
+
+EVALUATED APPROACHES
+====================
+
+1. Timestamp-Based Correlation
+   - Use CPU/GPU timestamps to match kernels with benchmark phases
+   - Pros: No code changes to RCCL
+   - Cons: Clock synchronization issues, ambiguity with overlapping kernels
+   - Rating: ⭐⭐⭐ Good but fragile
+
+2. Sequence Number Injection
+   - Inject unique IDs into kernel arguments
+   - Pros: Perfect correlation
+   - Cons: Requires RCCL source modification (very invasive)
+   - Rating: ⭐⭐ Not practical
+
+3. ROCProfiler Range Markers ⭐ RECOMMENDED ⭐
+   - Use ROCProfiler's ROCTX API to mark benchmark phases
+   - Pros: Perfect correlation, no RCCL changes, standard tool
+   - Cons: Requires linking with rocprofiler-sdk
+   - Rating: ⭐⭐⭐⭐⭐ Best solution
+
+4. Kernel Name Pattern Matching
+   - Infer correlation from kernel launch order
+   - Pros: No code changes
+   - Cons: Very fragile, breaks easily
+   - Rating: ⭐ Not recommended
+
+RECOMMENDED SOLUTION: ROCProfiler Range Markers
+===============================================
+
+HOW IT WORKS
+------------
+
+1. Instrument benchmark code with hierarchical range markers:
+
+   benchmark_size_128_oop_type_float_op_sum/
+   ├── iter_0000/
+   │   └── [kernel launches here]
+   ├── iter_0001/
+   │   └── [kernel launches here]
+   └── ...
+
+2. ROCProfiler captures all kernel launches within each range
+
+3. Post-processing script correlates ranges with benchmark output
+
+CODE CHANGES REQUIRED
+---------------------
+
+Minimal changes to common.cu:
+
+    #ifdef USE_ROCPROFILER
+    #include <rocprofiler-sdk/rocprofiler.h>
+    
+    // In BenchTime()
+    rocprofiler_push_range("size_%lu_%s", args->nbytes, 
+                          in_place ? "inplace" : "oop");
+    
+    for (int iter = 0; iter < iters; iter++) {
+        rocprofiler_push_range("iter_%04d", iter);
+        
+        startColl(...);  // RCCL collective - unchanged
+        completeColl(...);
+        
+        rocprofiler_pop_range();
+    }
+    
+    rocprofiler_pop_range();
+    #endif
+
+Build with: make ROCPROF_ENABLED=1
+
+USAGE EXAMPLE
+-------------
+
+# Run benchmark with ROCProfiler
+rocprof --roctx-trace --stats \
+    --output-file=trace.csv \
+    mpirun -np 8 ./reduce_scatter_perf -b 128 -e 1G ...
+
+# Analyze results
+python analyze_rocprof_timings.py \
+    --rocprof-trace trace.csv \
+    --benchmark-output benchmark_output.txt \
+    --output analysis.csv
+
+ADVANTAGES
+----------
+✅ Perfect correlation (explicit range markers)
+✅ No RCCL modification required
+✅ Works with any RCCL build
+✅ Standard ROCProfiler feature (well-supported)
+✅ Can collect full GPU metrics (not just timing)
+✅ MPI compatible (each rank generates separate trace)
+✅ Minimal overhead (~10-50 µs per range)
+✅ Extensible (easy to add more ranges/metrics)
+
+COMPARISON WITH HIP EVENTS
+---------------------------
+
+                    HIP Events      ROCProfiler Ranges
+                    ----------      ------------------
+Correlation         Perfect         Perfect
+Code Changes        Moderate        Moderate
+RCCL Modification   None            None
+GPU Metrics         Timing only     All metrics
+Overhead            1-5 µs          10-50 µs
+MPI Support         Yes             Yes
+External Tool       No              Yes (rocprof)
+Complexity          Medium          Medium
+
+WHEN TO USE EACH
+----------------
+
+HIP Events (current):
+- Regular performance testing
+- CI/CD pipelines
+- Quick turnaround
+- Minimal overhead
+
+ROCProfiler:
+- Detailed performance analysis
+- Algorithm debugging
+- Understanding kernel behavior
+- Collecting GPU metrics (occupancy, memory bandwidth, cache hits, etc.)
+
+IMPLEMENTATION PLAN
+===================
+
+Phase 1: Basic Integration (1-2 days)
+--------------------------------------
+- Add ROCProfiler range markers to BenchTime()
+- Create build flag USE_ROCPROFILER
+- Test with single-rank runs
+- Verify correlation accuracy
+
+Phase 2: Script Integration (2-3 days)
+---------------------------------------
+- Modify run_timing_sweep.py to support --profiling-mode rocprofiler
+- Create analyze_rocprof_timings.py
+- Test with MPI runs (8 ranks)
+- Validate against HIP events data
+
+Phase 3: Advanced Features (3-5 days)
+--------------------------------------
+- Add hybrid mode (HIP events + ROCProfiler)
+- Collect additional GPU metrics:
+  * Memory bandwidth
+  * Kernel occupancy
+  * Cache hit rates
+  * Register usage
+- Create visualization tools
+- Document best practices
+
+ALTERNATIVE: HYBRID APPROACH
+=============================
+
+Best of both worlds:
+- Use HIP events by default (low overhead)
+- Use ROCProfiler for detailed analysis (rich data)
+- Controlled by --profiling-mode flag
+
+Example:
+    # Fast, low overhead
+    python run_timing_sweep.py reduce_scatter --profiling-mode hip-events
+    
+    # Detailed analysis
+    python run_timing_sweep.py reduce_scatter --profiling-mode rocprofiler
+    
+    # Both (for validation)
+    python run_timing_sweep.py reduce_scatter --profiling-mode both
+
+RISKS AND MITIGATIONS
+======================
+
+Risk 1: ROCProfiler overhead affects timing
+--------------------------------------------
+Mitigation:
+- Use ROCProfiler only for analysis, not routine testing
+- Reduce iteration count when profiling
+- Compare with HIP events to quantify overhead
+
+Risk 2: ROCProfiler version compatibility
+------------------------------------------
+Mitigation:
+- Test with multiple ROCm versions
+- Use stable ROCTX API (not experimental features)
+- Provide fallback to HIP events
+
+Risk 3: MPI trace file management
+----------------------------------
+Mitigation:
+- Implement robust file naming scheme (rank in filename)
+- Create aggregation script for multi-rank analysis
+- Validate all ranks present before analysis
+
+NEXT STEPS
+==========
+
+1. Review this proposal
+2. Decide on implementation priority
+3. Create feature branch for ROCProfiler integration
+4. Implement Phase 1 (basic integration)
+5. Test and validate
+6. Document usage and best practices
+
+QUESTIONS TO CONSIDER
+=====================
+
+1. Should ROCProfiler be optional or required dependency?
+   Recommendation: Optional (controlled by build flag)
+
+2. Should we collect metrics beyond timing?
+   Recommendation: Yes, but start with timing only in Phase 1
+
+3. Should we keep HIP events or replace with ROCProfiler?
+   Recommendation: Keep both, use HIP events by default
+
+4. How to handle ROCProfiler overhead in performance comparisons?
+   Recommendation: Document overhead, use HIP events for official benchmarks
+
+================================================================================
+DETAILED DOCUMENTATION
+================================================================================
+
+See: /work/lmeadows/rccl/rccl-tests/docs/ROCPROFILER_INTEGRATION_ANALYSIS.md
+
+This document contains:
+- Detailed analysis of all 4 approaches
+- Complete implementation code examples
+- MPI considerations and aggregation strategies
+- Performance overhead analysis
+- Example usage and workflows
+- References and links
+
+================================================================================
+
