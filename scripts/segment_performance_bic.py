@@ -2,8 +2,9 @@
 """
 Performance segmentation using Piecewise Linear Regression with BIC.
 
-This algorithm finds the optimal 2 breakpoints to create exactly 3 segments,
-using Bayesian Information Criterion (BIC) to balance fit quality and complexity.
+This algorithm tries both 2 and 3 segments, using Bayesian Information Criterion
+(BIC) to balance fit quality and complexity. It prefers 2 segments for simplicity
+unless 3 segments shows significant improvement (BIC reduction >= 10%).
 """
 
 import argparse
@@ -214,23 +215,36 @@ def find_optimal_breakpoints(sizes, times, n_segments=3):
     if n < 2 * n_segments + 1:
         raise ValueError(f"Not enough data points ({n}) for {n_segments} segments")
     
-    print(f"Searching for optimal {n_breaks} breakpoints among {n} data points...")
+    print(f"Searching for optimal {n_breaks} breakpoint(s) among {n} data points...")
     
     best_bic = np.inf
     best_breaks = None
     
-    # Exhaustive search for 2 breakpoints
     # Ensure minimum 2 points per segment
     min_seg_size = 2
     
-    for i in range(min_seg_size, n - 2*min_seg_size):
-        for j in range(i + min_seg_size, n - min_seg_size):
-            breaks = [i, j]
+    if n_segments == 2:
+        # Search for 1 breakpoint
+        for i in range(min_seg_size, n - min_seg_size):
+            breaks = [i]
             bic = compute_bic_for_breaks(sizes, times, breaks)
             
             if bic < best_bic:
                 best_bic = bic
                 best_breaks = breaks
+    
+    elif n_segments == 3:
+        # Exhaustive search for 2 breakpoints
+        for i in range(min_seg_size, n - 2*min_seg_size):
+            for j in range(i + min_seg_size, n - min_seg_size):
+                breaks = [i, j]
+                bic = compute_bic_for_breaks(sizes, times, breaks)
+                
+                if bic < best_bic:
+                    best_bic = bic
+                    best_breaks = breaks
+    else:
+        raise ValueError(f"Unsupported number of segments: {n_segments}")
     
     if best_breaks is None:
         raise ValueError("Could not find valid breakpoints")
@@ -259,10 +273,10 @@ def find_optimal_breakpoints(sizes, times, n_segments=3):
 
 
 def segment_benchmark_data(output_dir, benchmark_name):
-    """Main segmentation function."""
+    """Main segmentation function - tries both 2 and 3 segments."""
     
     print(f"Segmenting {benchmark_name} benchmark data from {output_dir}")
-    print("Using: Piecewise Linear Regression with BIC (3 segments)")
+    print("Using: Piecewise Linear Regression with BIC")
     print("=" * 80)
     
     # Load timing data
@@ -292,19 +306,62 @@ def segment_benchmark_data(output_dir, benchmark_name):
     times = times[valid]
     
     if len(sizes) < 7:
-        print(f"Error: Not enough data points ({len(sizes)}) for 3-segment analysis")
+        print(f"Error: Not enough data points ({len(sizes)}) for segmentation analysis")
         return None
     
     print(f"Data points: {len(sizes)}")
     print(f"Size range: {sizes[0]} to {sizes[-1]} bytes")
     print()
     
-    # Find optimal segmentation
-    try:
-        breakpoints, segments, bic = find_optimal_breakpoints(sizes, times, n_segments=3)
-    except Exception as e:
-        print(f"Error during segmentation: {e}")
+    # Try both 2 and 3 segments
+    results = {}
+    for n_segs in [2, 3]:
+        print(f"\n--- Trying {n_segs} segments ---")
+        try:
+            breakpoints, segments, bic = find_optimal_breakpoints(sizes, times, n_segments=n_segs)
+            results[n_segs] = {
+                'breakpoints': breakpoints,
+                'segments': segments,
+                'bic': bic
+            }
+        except Exception as e:
+            print(f"Error with {n_segs} segments: {e}")
+            results[n_segs] = None
+    
+    # Choose best segmentation
+    # Prefer 2 segments unless 3 segments is significantly better (BIC lower by >= 10%)
+    if results[2] is None and results[3] is None:
+        print("\nError: Could not find valid segmentation for either 2 or 3 segments")
         return None
+    
+    if results[2] is None:
+        chosen = 3
+        print(f"\nChose {chosen} segments (2-segment failed)")
+    elif results[3] is None:
+        chosen = 2
+        print(f"\nChose {chosen} segments (3-segment failed)")
+    else:
+        bic_2 = results[2]['bic']
+        bic_3 = results[3]['bic']
+        improvement = (bic_2 - bic_3) / bic_2 * 100
+        
+        print(f"\n--- Comparison ---")
+        print(f"2 segments: BIC = {bic_2:.2f}")
+        print(f"3 segments: BIC = {bic_3:.2f}")
+        print(f"Improvement: {improvement:.1f}%")
+        
+        # Prefer 2 segments unless 3 segments improves BIC by at least 10%
+        if improvement >= 10.0:
+            chosen = 3
+            print(f"\nChose {chosen} segments (significantly better BIC)")
+        else:
+            chosen = 2
+            print(f"\nChose {chosen} segments (preferred for simplicity)")
+    
+    # Build result from chosen segmentation
+    breakpoints = results[chosen]['breakpoints']
+    segments = results[chosen]['segments']
+    bic = results[chosen]['bic']
     
     # Convert breakpoint indices to sizes
     break_sizes = [sizes[bp] for bp in breakpoints]
@@ -313,13 +370,21 @@ def segment_benchmark_data(output_dir, benchmark_name):
     result = {
         'benchmark': benchmark_name,
         'algorithm': 'piecewise_linear_bic',
-        'n_segments': 3,
+        'n_segments': chosen,
         'n_datapoints': int(len(sizes)),
         'bic': float(bic),
         'breakpoint_indices': [int(x) for x in breakpoints],
         'breakpoint_sizes': [int(x) for x in break_sizes],
         'segments': []
     }
+    
+    # Add comparison information
+    if results[2] and results[3]:
+        result['comparison'] = {
+            'bic_2_segments': float(results[2]['bic']),
+            'bic_3_segments': float(results[3]['bic']),
+            'improvement_percent': float(improvement)
+        }
     
     # Add segment information
     for seg in segments:
@@ -375,7 +440,12 @@ def main():
     print("=" * 80)
     print(f"Benchmark: {result['benchmark']}")
     print(f"Algorithm: Piecewise Linear Regression with BIC")
+    print(f"Segments: {result['n_segments']}")
     print(f"BIC: {result['bic']:.2f}")
+    if 'comparison' in result:
+        print(f"  (2-seg BIC: {result['comparison']['bic_2_segments']:.2f}, "
+              f"3-seg BIC: {result['comparison']['bic_3_segments']:.2f}, "
+              f"improvement: {result['comparison']['improvement_percent']:.1f}%)")
     print(f"Breakpoints at sizes: {', '.join(str(s) for s in result['breakpoint_sizes'])} bytes")
     print()
     
