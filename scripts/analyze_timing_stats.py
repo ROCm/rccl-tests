@@ -249,12 +249,15 @@ def save_detailed_results(summary_df, output_dir, benchmark_name):
     return output_file
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python analyze_timing_stats.py <output_directory>")
-        print("Example: python analyze_timing_stats.py run_all_gather_20251102_085929")
-        sys.exit(1)
-
-    output_dir = sys.argv[1]
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='Analyze RCCL timing sweep data and generate statistical summaries')
+    parser.add_argument('run_dir', 
+                        help='Run directory containing timing data (e.g., run_all_gather_20251102_085929)')
+    
+    args = parser.parse_args()
+    output_dir = args.run_dir
 
     if not os.path.exists(output_dir):
         print(f"Directory not found: {output_dir}")

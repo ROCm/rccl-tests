@@ -201,11 +201,15 @@ def generate_timing_csv(runs, output_file):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: correlate_rocprof_timings.py <run_directory>")
-        return 1
+    import argparse
     
-    run_dir = sys.argv[1]
+    parser = argparse.ArgumentParser(
+        description='Correlate benchmark timestamps with ROCProfiler kernel traces')
+    parser.add_argument('run_dir',
+                        help='Run directory containing timestamp and kernel trace data')
+    
+    args = parser.parse_args()
+    run_dir = args.run_dir
     
     if not os.path.isdir(run_dir):
         print(f"Error: Directory not found: {run_dir}")

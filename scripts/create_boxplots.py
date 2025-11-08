@@ -1,278 +1,307 @@
 #!/usr/bin/env python3
 """
-Create boxplots for individual kernel timings - one per benchmark line
+Create boxplots for individual kernel timings from RCCL benchmark data.
+
+This script creates boxplot visualizations showing the distribution of
+individual kernel execution times across all iterations and ranks.
+
+Usage:
+    python create_boxplots.py <run_directory>
+
+Example:
+    python create_boxplots.py /work/lmeadows/rccl/data/hostname/run_all_reduce_20251104_165031
 """
 
+import argparse
+import os
+import sys
+import glob
+import json
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import glob
-from pathlib import Path
 
-def load_all_timings():
-    """Load all individual timing CSV files"""
-    timing_files = glob.glob("allreduce_timings_*.csv")
-    all_timings = []
 
-    print(f"Loading {len(timing_files)} timing files...")
-
+def load_timing_data(run_dir):
+    """Load all_rank*.csv files from run directory."""
+    timing_files = glob.glob(os.path.join(run_dir, 'all_rank*.csv'))
+    
+    if not timing_files:
+        return None
+    
+    dfs = []
     for filepath in timing_files:
-        df = pd.read_csv(filepath)
-        # Add a human-readable label for plotting
-        inplace_str = "in-place" if df['inplace'].iloc[0] == 1 else "out-of-place"
-        size_mb = df['size_bytes'].iloc[0] / (1024*1024)
-        df['label'] = ".1f"
-        df['size_category'] = get_size_category(df['size_bytes'].iloc[0])
-        all_timings.append(df)
+        try:
+            df = pd.read_csv(filepath)
+            dfs.append(df)
+        except Exception as e:
+            print(f"Warning: Could not load {filepath}: {e}")
+    
+    if not dfs:
+        return None
+    
+    combined_df = pd.concat(dfs, ignore_index=True)
+    return combined_df
 
-    if all_timings:
-        combined_df = pd.concat(all_timings, ignore_index=True)
-        print(f"Loaded {len(combined_df)} individual timing measurements")
-        return combined_df
+
+def load_bic_segmentation(run_dir, benchmark_name):
+    """Load BIC segmentation JSON if available."""
+    seg_file = os.path.join(run_dir, f'{benchmark_name}_bic_segmentation.json')
+    
+    if not os.path.exists(seg_file):
+        return None
+    
+    try:
+        with open(seg_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load segmentation: {e}")
+        return None
+
+
+def format_size(size_bytes):
+    """Format size in human-readable form."""
+    if size_bytes >= 1024**3:
+        return f"{size_bytes / (1024**3):.1f} GiB"
+    elif size_bytes >= 1024**2:
+        return f"{size_bytes / (1024**2):.0f} MiB"
+    elif size_bytes >= 1024:
+        return f"{size_bytes / 1024:.0f} KiB"
     else:
-        print("No timing files found!")
-        return pd.DataFrame()
+        return f"{size_bytes} B"
 
-def get_size_category(size_bytes):
-    """Categorize message sizes for plotting"""
-    if size_bytes < 1024:
-        return "Small (< 1KB)"
-    elif size_bytes < 1024*1024:
-        return "Medium (1KB - 1MB)"
+
+def create_segment_boxplots(timing_df, segmentation, benchmark_name, output_dir):
+    """Create boxplots per BIC segment."""
+    
+    if segmentation is None:
+        print("Warning: No segmentation data available, creating single plot")
+        segments = [{
+            'segment': 0,
+            'size_range_bytes': [timing_df['size_bytes'].min(), timing_df['size_bytes'].max()],
+            'model': 'all'
+        }]
     else:
-        return "Large (≥ 1MB)"
-
-def create_overview_boxplot(timings_df):
-    """Create an overview boxplot showing all configurations"""
-    plt.figure(figsize=(20, 10))
-
-    # Sort by size for better visualization
-    timings_df_sorted = timings_df.sort_values(['size_bytes', 'inplace'])
-
-    # Create boxplot
-    ax = sns.boxplot(data=timings_df_sorted,
-                     x='label',
-                     y=timings_df_sorted['time_seconds'] * 1e6,  # Convert to microseconds
-                     hue='inplace',
-                     palette=['lightblue', 'lightgreen'])
-
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
-    ax.set_xlabel('Message Size & Operation Mode')
-    ax.set_ylabel('Kernel Time (μs)')
-    ax.set_title('Individual Kernel Timings: Boxplots for Each Benchmark Configuration\n'
-                '(8 bytes to 1 GiB, out-of-place vs in-place)')
-    ax.legend(title='Operation Mode', labels=['Out-of-place', 'In-place'])
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig('all_kernel_timings_boxplot.png', dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print("Saved overview boxplot: all_kernel_timings_boxplot.png")
-
-def create_category_boxplots(timings_df):
-    """Create separate boxplots for each size category"""
-
-    categories = ["Small (< 1KB)", "Medium (1KB - 1MB)", "Large (≥ 1MB)"]
-
-    for category in categories:
-        cat_data = timings_df[timings_df['size_category'] == category]
-
-        if len(cat_data) == 0:
+        segments = segmentation['segments']
+    
+    output_files = []
+    
+    for seg in segments:
+        seg_num = seg['segment']
+        size_min, size_max = seg['size_range_bytes']
+        
+        # Filter data for this segment
+        seg_data = timing_df[
+            (timing_df['size_bytes'] >= size_min) & 
+            (timing_df['size_bytes'] <= size_max)
+        ].copy()
+        
+        if len(seg_data) == 0:
             continue
-
-        # Calculate number of subplots needed
-        unique_labels = cat_data['label'].unique()
-        n_plots = len(unique_labels)
-
-        if n_plots == 0:
+        
+        # Convert to microseconds
+        seg_data['time_us'] = seg_data['time_seconds'] * 1e6
+        
+        # Get unique sizes in this segment
+        sizes = sorted(seg_data['size_bytes'].unique())
+        n_sizes = len(sizes)
+        
+        if n_sizes == 0:
             continue
-
-        # Create figure with subplots
-        cols = min(4, max(1, int(np.ceil(np.sqrt(n_plots)))))
-        rows = int(np.ceil(n_plots / cols))
-
-        fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
-        if rows == 1 and cols == 1:
-            axes = [axes]
-        elif rows == 1:
-            axes = axes.flatten()
+        
+        # Create figure - use 2 rows if more than 7 sizes
+        if n_sizes > 7:
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(max(14, n_sizes), 12))
+            axes = [ax1, ax2]
+            # Split sizes between two rows
+            mid = (n_sizes + 1) // 2
+            sizes_per_ax = [sizes[:mid], sizes[mid:]]
         else:
-            axes = axes.flatten()
-
-        fig.suptitle(f'Individual Kernel Timings: {category}\nBoxplots by Configuration',
-                    fontsize=14, y=0.98)
-
-        for i, label in enumerate(sorted(unique_labels)):
-            if i >= len(axes):
-                break
-
-            ax = axes[i]
-            plot_data = cat_data[cat_data['label'] == label]
-
-            if len(plot_data) > 0:
-                # Create boxplot for this specific configuration
-                times_us = plot_data['time_seconds'].values * 1e6
-
-                bp = ax.boxplot(times_us,
-                               patch_artist=True,
-                               medianprops={'color': 'red', 'linewidth': 2},
-                               whiskerprops={'color': 'black', 'linewidth': 1.5},
-                               capprops={'color': 'black', 'linewidth': 1.5},
-                               flierprops={'marker': 'o', 'markersize': 3, 'markerfacecolor': 'red'})
-
-                # Color the box based on in-place mode
-                inplace_mode = plot_data['inplace'].iloc[0]
-                color = 'lightgreen' if inplace_mode == 1 else 'lightblue'
-                for patch in bp['boxes']:
-                    patch.set_facecolor(color)
-
-                ax.set_title(f'{label}')
-                ax.set_ylabel('Time (μs)')
-                ax.grid(True, alpha=0.3)
-
-                # Add statistics annotation
-                mean_val = np.mean(times_us)
-                std_val = np.std(times_us)
-                ax.text(0.02, 0.98, '.1f',
-                       transform=ax.transAxes, fontsize=8, verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-        # Hide unused subplots
-        for i in range(n_plots, len(axes)):
-            axes[i].set_visible(False)
-
+            fig, ax = plt.subplots(1, 1, figsize=(max(12, n_sizes * 1.5), 6))
+            axes = [ax]
+            sizes_per_ax = [sizes]
+        
+        # Plot each row
+        for ax_idx, (ax, size_list) in enumerate(zip(axes, sizes_per_ax)):
+            plot_data = []
+            labels = []
+            colors = []
+            positions = []
+            pos = 1
+            
+            for size in size_list:
+                size_data = seg_data[seg_data['size_bytes'] == size]
+                
+                # Out-of-place
+                oop_data = size_data[size_data['inplace'] == 0]['time_us'].values
+                if len(oop_data) > 0:
+                    plot_data.append(oop_data)
+                    labels.append(f"{format_size(size)}\nOOP")
+                    colors.append('lightblue')
+                    positions.append(pos)
+                    pos += 1
+                
+                # In-place
+                inp_data = size_data[size_data['inplace'] == 1]['time_us'].values
+                if len(inp_data) > 0:
+                    plot_data.append(inp_data)
+                    labels.append(f"{format_size(size)}\nINP")
+                    colors.append('lightgreen')
+                    positions.append(pos)
+                    pos += 1
+                
+                # Add spacing between sizes
+                pos += 0.5
+            
+            if len(plot_data) == 0:
+                continue
+            
+            # Create boxplots
+            bp = ax.boxplot(plot_data,
+                           positions=positions,
+                           widths=0.6,
+                           patch_artist=True,
+                           medianprops={'color': 'red', 'linewidth': 2},
+                           whiskerprops={'color': 'black', 'linewidth': 1.5},
+                           capprops={'color': 'black', 'linewidth': 1.5},
+                           flierprops={'marker': 'o', 'markersize': 3, 'alpha': 0.5})
+            
+            # Color boxes
+            for patch, color in zip(bp['boxes'], colors):
+                patch.set_facecolor(color)
+            
+            # Add mean markers
+            for data, pos in zip(plot_data, positions):
+                mean_val = np.mean(data)
+                ax.plot(pos, mean_val, 'D', color='darkred', markersize=8, 
+                       markeredgecolor='black', markeredgewidth=1, zorder=3)
+            
+            # Format axes
+            ax.set_xticks(positions)
+            ax.set_xticklabels(labels, rotation=45, ha='right')
+            ax.set_ylabel('Kernel Time (µs)')
+            ax.grid(True, alpha=0.3, axis='y')
+            
+            # Use log scale if model suggests it
+            if seg.get('model') == 'log-linear' or size_max / size_min > 1000:
+                ax.set_yscale('log')
+        
+        # Overall title
+        model_str = seg.get('model', 'unknown')
+        r2_str = f"R²={seg.get('r_squared', 0):.3f}" if 'r_squared' in seg else ""
+        fig.suptitle(
+            f"{benchmark_name.upper()} - Segment {seg_num}: {format_size(size_min)} to {format_size(size_max)}\n"
+            f"Model: {model_str}  {r2_str}",
+            fontsize=14, fontweight='bold'
+        )
+        
         plt.tight_layout()
-        filename = f'kernel_timings_{category.lower().replace(" ", "_").replace("(<_)", "").replace("(_-_)", "_").replace("(_≥_)", "_")}_boxplots.png'
-        plt.savefig(filename, dpi=150, bbox_inches='tight')
-        plt.close()
+        
+        # Save figure
+        output_file = os.path.join(output_dir, f'{benchmark_name}_segment{seg_num}_boxplots.png')
+        fig.savefig(output_file, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        
+        output_files.append(output_file)
+        print(f"  Saved: {os.path.basename(output_file)}")
+    
+    return output_files
 
-        print(f"Saved category boxplot: {filename}")
 
-def create_benchmark_correlation_plot(timings_df):
-    """Create a plot showing benchmark time vs individual timing statistics"""
-    plt.figure(figsize=(15, 10))
-
-    # Group by configuration and calculate statistics
-    grouped = timings_df.groupby(['size_bytes', 'inplace']).agg({
-        'time_seconds': ['mean', 'std', 'min', 'max'],
-        'label': 'first'
-    }).reset_index()
-
-    grouped.columns = ['size_bytes', 'inplace', 'mean_time', 'std_time', 'min_time', 'max_time', 'label']
-    grouped['mean_time_us'] = grouped['mean_time'] * 1e6
-
-    # For demonstration, we'll use synthetic benchmark times based on the actual sweep
-    # In a real implementation, you'd load the actual benchmark results
-    benchmark_times = []
-    for _, row in grouped.iterrows():
-        # Use approximate benchmark times based on the sweep results
-        size = row['size_bytes']
-        inplace = row['inplace']
-        if size <= 1024:
-            bench_time = 20 + (size / 1024) * 5  # Small messages
-        elif size <= 1024*1024:
-            bench_time = 20 + (size / (1024*1024)) * 20  # Medium messages
-        else:
-            bench_time = 30 + (size / (1024*1024)) * 0.1  # Large messages
-
-        bench_time *= 1.2 if inplace == 1 else 1.0  # In-place typically slower
-        benchmark_times.append(bench_time)
-
-    grouped['bench_time_us'] = benchmark_times
-
-    # Create scatter plot with error bars
-    fig, ax = plt.subplots(figsize=(12, 8))
-
-    # Plot individual mean times vs benchmark times
-    colors = ['blue' if inplace == 0 else 'green' for inplace in grouped['inplace']]
-
-    scatter = ax.scatter(grouped['bench_time_us'], grouped['mean_time_us'],
-                        c=colors, s=60, alpha=0.7, edgecolors='black')
-
-    # Add error bars (showing individual timing std deviation)
-    ax.errorbar(grouped['bench_time_us'], grouped['mean_time_us'],
-               yerr=grouped['std_time'] * 1e6, fmt='none', ecolor='gray', alpha=0.5, capsize=3)
-
-    # Add diagonal reference line (perfect correlation)
-    max_val = max(grouped['bench_time_us'].max(), grouped['mean_time_us'].max())
-    ax.plot([0, max_val], [0, max_val], 'r--', alpha=0.5, label='Perfect Correlation')
-
-    ax.set_xlabel('Benchmark Reported Time (μs)')
-    ax.set_ylabel('Individual Kernel Mean Time (μs)')
-    ax.set_title('Benchmark vs Individual Kernel Timing Correlation\n'
-                '(Error bars show individual timing standard deviation)')
-    ax.grid(True, alpha=0.3)
-    ax.legend(['Perfect Correlation', 'Out-of-place', 'In-place'])
-
-    # Add correlation coefficient
-    correlation = np.corrcoef(grouped['bench_time_us'], grouped['mean_time_us'])[0, 1]
-    ax.text(0.02, 0.98, '.3f',
-           transform=ax.transAxes, fontsize=10, verticalalignment='top',
-           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-
-    plt.tight_layout()
-    plt.savefig('benchmark_correlation_plot.png', dpi=150, bbox_inches='tight')
-    plt.close()
-
-    print("Saved correlation plot: benchmark_correlation_plot.png")
-
-def print_statistics_summary(timings_df):
-    """Print summary statistics"""
+def print_statistics_summary(timing_df):
+    """Print summary statistics."""
     print("\n" + "="*80)
-    print("INDIVIDUAL KERNEL TIMING STATISTICS SUMMARY")
+    print("TIMING STATISTICS SUMMARY")
+    print("="*80)
+    
+    # Convert to microseconds
+    timing_df['time_us'] = timing_df['time_seconds'] * 1e6
+    
+    # Overall statistics
+    print("\nOverall Statistics:")
+    print(f"  Total measurements: {len(timing_df)}")
+    print(f"  Mean time: {timing_df['time_us'].mean():.2f} µs")
+    print(f"  Std dev: {timing_df['time_us'].std():.2f} µs")
+    print(f"  Min time: {timing_df['time_us'].min():.2f} µs")
+    print(f"  Max time: {timing_df['time_us'].max():.2f} µs")
+    
+    # By operation mode
+    print("\nBy Operation Mode:")
+    for inplace_val in sorted(timing_df['inplace'].unique()):
+        mode_name = "In-place" if inplace_val else "Out-of-place"
+        mode_data = timing_df[timing_df['inplace'] == inplace_val]['time_us']
+        print(f"  {mode_name}:")
+        print(f"    Mean: {mode_data.mean():.2f} µs")
+        print(f"    Measurements: {len(mode_data)}")
+    
+    # By size (show first and last few)
+    print("\nSize Range:")
+    sizes = sorted(timing_df['size_bytes'].unique())
+    print(f"  Smallest: {format_size(sizes[0])}")
+    print(f"  Largest: {format_size(sizes[-1])}")
+    print(f"  Number of sizes: {len(sizes)}")
+    
     print("="*80)
 
-    # Overall statistics
-    all_times_us = timings_df['time_seconds'].values * 1e6
-    print("\nOverall Statistics:")
-    print(f"  Total measurements: {len(all_times_us)}")
-    print(".2f")
-    print(".2f")
-    print(".2f")
-
-    # By size category
-    print("\nBy Size Category:")
-    for category in timings_df['size_category'].unique():
-        cat_data = timings_df[timings_df['size_category'] == category]['time_seconds'] * 1e6
-        print(f"  {category}:")
-        print(".2f")
-
-    # By in-place mode
-    print("\nBy Operation Mode:")
-    inplace_modes = {0: "Out-of-place", 1: "In-place"}
-    for mode, name in inplace_modes.items():
-        mode_data = timings_df[timings_df['inplace'] == mode]['time_seconds'] * 1e6
-        if len(mode_data) > 0:
-            print(f"  {name}:")
-            print(".2f")
 
 def main():
-    # Load data
-    timings_df = load_all_timings()
-
-    if len(timings_df) == 0:
-        return
-
-    print_statistics_summary(timings_df)
-
-    # Create plots
+    parser = argparse.ArgumentParser(
+        description='Create boxplot visualizations of RCCL kernel timing distributions')
+    parser.add_argument('run_dir',
+                        help='Run directory containing timing data (e.g., run_all_reduce_20251104_165031)')
+    
+    args = parser.parse_args()
+    
+    if not os.path.isdir(args.run_dir):
+        print(f"Error: Directory not found: {args.run_dir}")
+        return 1
+    
+    # Extract benchmark name from directory
+    dir_name = os.path.basename(args.run_dir.rstrip('/'))
+    # Format: run_<benchmark>_YYYYMMDD_HHMMSS
+    match = re.match(r'run_([a-z_]+)_\d{8}_\d{6}', dir_name)
+    if match:
+        benchmark_name = match.group(1)
+    else:
+        print(f"Warning: Could not extract benchmark name from directory: {dir_name}")
+        benchmark_name = 'benchmark'
+    
+    print(f"Creating boxplots for: {benchmark_name}")
+    print(f"Run directory: {args.run_dir}")
+    
+    # Load timing data
+    timing_df = load_timing_data(args.run_dir)
+    if timing_df is None or len(timing_df) == 0:
+        print("Error: No timing data found")
+        return 1
+    
+    print(f"  Loaded {len(timing_df)} timing measurements")
+    
+    # Load segmentation
+    segmentation = load_bic_segmentation(args.run_dir, benchmark_name)
+    if segmentation:
+        print(f"  Loaded BIC segmentation: {segmentation['n_segments']} segments")
+    else:
+        print("  No BIC segmentation found, creating single boxplot")
+    
+    # Print statistics
+    print_statistics_summary(timing_df)
+    
+    # Create boxplots
     print("\nCreating boxplot visualizations...")
+    output_files = create_segment_boxplots(timing_df, segmentation, benchmark_name, args.run_dir)
+    
+    if output_files:
+        print(f"\n✅ Generated {len(output_files)} boxplot visualization(s)")
+        for f in output_files:
+            print(f"   {os.path.basename(f)}")
+        return 0
+    else:
+        print("Error: No boxplots were generated")
+        return 1
 
-    try:
-        create_overview_boxplot(timings_df)
-        create_category_boxplots(timings_df)
-        create_benchmark_correlation_plot(timings_df)
-
-        print(f"\n✅ Generated boxplot visualizations:")
-        print(f"   - all_kernel_timings_boxplot.png (overview)")
-        print(f"   - kernel_timings_*_boxplots.png (by category)")
-        print(f"   - benchmark_correlation_plot.png (correlation analysis)")
-
-    except ImportError as e:
-        print(f"❌ Could not create plots: {e}")
-        print("Install matplotlib and seaborn: pip install matplotlib seaborn")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

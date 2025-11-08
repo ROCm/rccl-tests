@@ -341,8 +341,8 @@ def main():
     parser = argparse.ArgumentParser(
         description='Segment performance data using Piecewise Linear Regression with BIC'
     )
-    parser.add_argument('--run-dir', required=True,
-                       help='Directory containing benchmark run data')
+    parser.add_argument('run_dir',
+                       help='Run directory containing benchmark data')
     
     args = parser.parse_args()
     
@@ -365,7 +365,7 @@ def main():
         return 1
     
     # Save results
-    output_file = os.path.join(args.run_dir, f'{benchmark_name}_segmentation_bic.json')
+    output_file = os.path.join(args.run_dir, f'{benchmark_name}_bic_segmentation.json')
     with open(output_file, 'w') as f:
         json.dump(result, f, indent=2)
     
