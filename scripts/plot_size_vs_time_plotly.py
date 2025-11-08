@@ -55,7 +55,7 @@ def parse_benchmark_output(output_file):
     Format:
     #       size         count      type   redop     root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
     #                                                         (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)       
-              8              2     float     sum       -1    23.29    0.00    0.00      0    23.26    0.00    0.00      0
+              8              2     float     sum       -1    23.29    0.00    0.00      0    23.26    0.00    0.00      0|N/A
     
     Columns 6 and 10 are out-of-place and in-place times respectively.
     """
@@ -71,7 +71,7 @@ def parse_benchmark_output(output_file):
             match = re.match(
                 r'^\s*(\d+)\s+(\d+)\s+(\w+)\s+(\w+)\s+(-?\d+)\s+'
                 r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)\s+'
-                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)',
+                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+((\d+)|N/A)',
                 line
             )
             

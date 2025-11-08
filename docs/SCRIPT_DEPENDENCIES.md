@@ -229,3 +229,4 @@ deactivate
 - seaborn: 0.13.2
 - plotly: 6.4.0
 
+
