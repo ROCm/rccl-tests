@@ -148,6 +148,7 @@ extern struct testEngine ncclTestEngine;
 
 struct threadArgs {
   size_t nbytes;
+  size_t inputSize;  // Total input size (before per-rank division)
   size_t minbytes;
   size_t maxbytes;
   size_t stepbytes;

@@ -696,7 +696,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       fprintf(stderr, "Error: Could not open timestamp file: %s\n", timestamp_filename);
     }
   }
-  
+
   // Write Tstart event
   if (timestamp_file) {
     fprintf(timestamp_file,
@@ -704,7 +704,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
             args->proc,
             timestamp_ns(),
             args->collTest->name,
-            args->nbytes,
+            args->inputSize,
             in_place ? "inp" : "oop",
             test_typenames[type],
             test_opnames[op],
@@ -884,6 +884,7 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   count = size / wordSize(type);
   args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, wordSize(type), (size_t)nranks);
 
+  args->inputSize = size;  // Store the total input size
   args->nbytes = paramCount * wordSize(type);
   args->sendBytes = sendCount * wordSize(type);
   args->expectedBytes = recvCount * wordSize(type);
@@ -1010,7 +1011,31 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       setupArgs(size, type, args);
       char rootName[100];
       sprintf(rootName, "%6i", root);
-      PRINT("%12li  %12li  %8s  %6s  %6s", std::max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+
+      // Check if this size produces valid message sizes
+      auto largestMessageSize = std::max(args->sendBytes, args->expectedBytes);
+
+      // Debug logging for invalid sizes
+      if (largestMessageSize == 0 && args->proc == 0) {
+        fprintf(stderr, "# DEBUG: Skipping size=%lu (sendBytes=%lu, expectedBytes=%lu, largestMessageSize=0)\n",
+                size, args->sendBytes, args->expectedBytes);
+        fflush(stderr);
+      }
+
+      PRINT("%12li  %12li  %8s  %6s  %6s", largestMessageSize, args->nbytes / wordSize(type), typeName, opName, rootName);
+
+      // Skip kernel execution if the size would produce zero-byte messages
+      if (largestMessageSize == 0) {
+        // Print placeholder values for skipped benchmark
+        PRINT("  %7s  %6s  %6s  %5s", "SKIP", "0.00", "0.00", "N/A");
+        if(output_algo_proto_channels) {
+          PRINT("%8s  %8s  %10s", "N/A", "N/A", "N/A");
+        }
+        PRINT("\n");
+        continue;  // Skip to next size
+      }
+
+      // Run benchmark normally for valid sizes
       if (enable_out_of_place) {
         TESTCHECK(BenchTime(args, type, op, root, 0));
         usleep(delay_inout_place);

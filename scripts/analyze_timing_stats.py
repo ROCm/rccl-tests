@@ -189,13 +189,13 @@ def create_statistical_summary(timing_df, benchmark_df=None):
 def format_size(size_bytes):
     """Format size in human readable format"""
     if size_bytes >= 1024**3:
-        return "6.1f"
+        return f"{size_bytes / (1024**3):.1f} GiB"
     elif size_bytes >= 1024**2:
-        return "6.1f"
+        return f"{size_bytes / (1024**2):.0f} MiB"
     elif size_bytes >= 1024:
-        return "6.1f"
+        return f"{size_bytes / 1024:.0f} KiB"
     else:
-        return "6.0f"
+        return f"{size_bytes} B"
 
 def print_summary_table(summary_df, benchmark_name):
     """Print formatted statistical summary table"""
@@ -214,23 +214,27 @@ def print_summary_table(summary_df, benchmark_name):
         print("-" * 80)
 
         # Print header
-        header = "7"
+        header = f"{'Size':>12} {'Count':>7} {'Wall':>8}  {'Mean':>8} {'Std':>8} {'Min':>8} {'Max':>8} {'P25':>8} {'P75':>8} {'CV%':>6}"
         print(header)
         print("-" * len(header))
 
         for _, row in op_df.iterrows():
             size_str = format_size(row['size_bytes'])
-            count_str = "4d"
+            count_str = f"{int(row['kernel_count']):4d}"
 
             # Wall time column
             if pd.isna(row.get('wall_time_us', pd.NA)):
-                wall_str = "N/A    "
+                wall_str = "N/A     "
             else:
                 wall_approx = "*" if row.get('wall_size_approx', False) else " "
-                wall_str = "6.1f"
+                wall_str = f"{row['wall_time_us']:7.1f}{wall_approx}"
 
             # Kernel timing columns
-            line = "6.1f"
+            line = (f"{size_str:>12} {count_str:>7} {wall_str:>8}  "
+                   f"{row['kernel_mean_us']:8.1f} {row['kernel_std_us']:8.1f} "
+                   f"{row['kernel_min_us']:8.1f} {row['kernel_max_us']:8.1f} "
+                   f"{row['kernel_p25_us']:8.1f} {row['kernel_p75_us']:8.1f} "
+                   f"{row['kernel_cv_percent']:6.1f}")
             print(line)
 
     print(f"\n{'='*100}")

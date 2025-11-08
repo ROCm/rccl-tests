@@ -308,6 +308,28 @@ def main():
             json.dump(rank_pid_map, f, indent=2)
         print(f"\nSaved rank-to-PID mapping: {len(rank_pid_map)} ranks")
     
+    # Save run metadata
+    import socket
+    from datetime import datetime
+    
+    metadata = {
+        'benchmark': args.benchmark,
+        'ranks': args.ranks,
+        'min_size_bytes': min_size,
+        'max_size_bytes': max_size,
+        'iterations': args.iterations,
+        'warmup_iterations': args.warmup,
+        'timestamp': datetime.now().isoformat(),
+        'hostname': socket.gethostname(),
+        'output_directory': output_dir,
+        'command': f"python3 run_timing_sweep.py {args.benchmark} --ranks {args.ranks} --min-size {args.min_size} --max-size {args.max_size} --iterations {args.iterations} --warmup {args.warmup}"
+    }
+    
+    metadata_file = os.path.join(output_dir, 'run_metadata.json')
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Saved run metadata: {metadata_file}")
+    
     # Collect timing files
     success = collect_timing_files(output_dir, args.ranks)
     
