@@ -111,9 +111,20 @@ def create_segment_boxplots(timing_df, segmentation, benchmark_name, output_dir)
         if n_sizes == 0:
             continue
         
+        # Determine Y-axis range for the entire segment (for consistent scaling)
+        y_min = seg_data['time_us'].min()
+        y_max = seg_data['time_us'].max()
+        # Add 10% padding
+        y_range = y_max - y_min
+        y_min_plot = max(0, y_min - 0.1 * y_range)
+        y_max_plot = y_max + 0.1 * y_range
+        
+        # Determine if we should use log scale
+        use_log_scale = seg.get('model') == 'log-linear' or size_max / size_min > 1000
+        
         # Create figure - use 2 rows if more than 7 sizes
         if n_sizes > 7:
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(max(14, n_sizes), 12))
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(max(14, n_sizes), 12), sharey=True)
             axes = [ax1, ax2]
             # Split sizes between two rows
             mid = (n_sizes + 1) // 2
@@ -183,10 +194,14 @@ def create_segment_boxplots(timing_df, segmentation, benchmark_name, output_dir)
             ax.set_xticklabels(labels, rotation=45, ha='right')
             ax.set_ylabel('Kernel Time (µs)')
             ax.grid(True, alpha=0.3, axis='y')
-            
-            # Use log scale if model suggests it
-            if seg.get('model') == 'log-linear' or size_max / size_min > 1000:
+        
+        # Apply Y-axis scale and limits consistently to ALL axes in this segment
+        for ax in axes:
+            if use_log_scale:
                 ax.set_yscale('log')
+            else:
+                ax.set_yscale('linear')
+                ax.set_ylim(y_min_plot, y_max_plot)
         
         # Overall title
         model_str = seg.get('model', 'unknown')

@@ -156,7 +156,7 @@ def format_size(size_bytes):
 
 
 def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
-    """Create interactive Plotly visualization."""
+    """Create interactive Plotly visualization with main plot and per-segment plots."""
     
     # Build kernel summaries for OOP and INP
     kernel_df_oop = build_kernel_summary(timing_df, inplace_mode=0)
@@ -166,8 +166,27 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
     wall_df_oop = wall_df[wall_df['inplace'] == 0].copy()
     wall_df_inp = wall_df[wall_df['inplace'] == 1].copy()
     
-    # Create figure
-    fig = go.Figure()
+    # Determine number of subplots: 1 main + 1 per segment
+    num_segments = len(segmentation['segments']) if segmentation and 'segments' in segmentation else 0
+    num_plots = 1 + num_segments
+    
+    # Create subplot titles
+    subplot_titles = ['Overview - All Segments']
+    if segmentation and 'segments' in segmentation:
+        for seg in segmentation['segments']:
+            seg_num = seg['segment']
+            formula = seg.get('formula', 'N/A')
+            r_squared = seg.get('r_squared', 0.0)
+            subplot_titles.append(f'Segment {seg_num}<br><sub>{formula}, R² = {r_squared:.4f}</sub>')
+    
+    # Create figure with subplots
+    fig = make_subplots(
+        rows=num_plots,
+        cols=1,
+        subplot_titles=subplot_titles,
+        vertical_spacing=0.12,  # Increased spacing between subplots
+        row_heights=[0.4] + [0.6/num_segments]*num_segments if num_segments > 0 else [1.0]
+    )
     
     # Color scheme
     color_oop = 'rgb(31, 119, 180)'  # Blue
@@ -190,9 +209,12 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
             showlegend=True,
             name='OOP IQR (25-75%)',
             hoverinfo='skip'
-        ))
+        ), row=1, col=1)
         
         # Mean line
+        # Calculate bandwidth: GB/s = bytes / microseconds / 1000
+        bw_oop = x_oop / y_mean_oop / 1000
+        
         fig.add_trace(go.Scatter(
             x=x_oop,
             y=y_mean_oop,
@@ -210,13 +232,15 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 thickness=1.5,
                 width=4
             ),
+            customdata=np.column_stack([bw_oop]),
             hovertemplate=(
                 '<b>OOP Kernel</b><br>' +
-                'Size: %{x} bytes<br>' +
+                'Size: %{x:.0f} bytes<br>' +
                 'Mean: %{y:.2f} µs<br>' +
+                'BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
-        ))
+        ), row=1, col=1)
     
     # Plot INP kernel mean with IQR error bands
     if len(kernel_df_inp) > 0:
@@ -235,9 +259,12 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
             showlegend=True,
             name='INP IQR (25-75%)',
             hoverinfo='skip'
-        ))
+        ), row=1, col=1)
         
         # Mean line
+        # Calculate bandwidth: GB/s = bytes / microseconds / 1000
+        bw_inp = x_inp / y_mean_inp / 1000
+        
         fig.add_trace(go.Scatter(
             x=x_inp,
             y=y_mean_inp,
@@ -255,16 +282,20 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 thickness=1.5,
                 width=4
             ),
+            customdata=np.column_stack([bw_inp]),
             hovertemplate=(
                 '<b>INP Kernel</b><br>' +
-                'Size: %{x} bytes<br>' +
+                'Size: %{x:.0f} bytes<br>' +
                 'Mean: %{y:.2f} µs<br>' +
+                'BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
-        ))
+        ), row=1, col=1)
     
     # Plot OOP wall clock times
     if len(wall_df_oop) > 0:
+        bw_wall_oop = wall_df_oop['size_bytes'].values / wall_df_oop['wall_time_us'].values / 1000
+        
         fig.add_trace(go.Scatter(
             x=wall_df_oop['size_bytes'],
             y=wall_df_oop['wall_time_us'],
@@ -276,16 +307,20 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 symbol='circle-open',
                 line=dict(width=2)
             ),
+            customdata=np.column_stack([bw_wall_oop]),
             hovertemplate=(
                 '<b>OOP Wall Clock</b><br>' +
-                'Size: %{x} bytes<br>' +
+                'Size: %{x:.0f} bytes<br>' +
                 'Time: %{y:.2f} µs<br>' +
+                'BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
-        ))
+        ), row=1, col=1)
     
     # Plot INP wall clock times
     if len(wall_df_inp) > 0:
+        bw_wall_inp = wall_df_inp['size_bytes'].values / wall_df_inp['wall_time_us'].values / 1000
+        
         fig.add_trace(go.Scatter(
             x=wall_df_inp['size_bytes'],
             y=wall_df_inp['wall_time_us'],
@@ -297,15 +332,17 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 symbol='square-open',
                 line=dict(width=2)
             ),
+            customdata=np.column_stack([bw_wall_inp]),
             hovertemplate=(
                 '<b>INP Wall Clock</b><br>' +
-                'Size: %{x} bytes<br>' +
+                'Size: %{x:.0f} bytes<br>' +
                 'Time: %{y:.2f} µs<br>' +
+                'BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
-        ))
+        ), row=1, col=1)
     
-    # Add BIC segmentation lines
+    # Add BIC segmentation lines to overview plot only
     if segmentation and 'breakpoint_sizes' in segmentation:
         for i, breakpoint in enumerate(segmentation['breakpoint_sizes']):
             fig.add_vline(
@@ -318,10 +355,189 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                     y=0.98,
                     showarrow=False,
                     font=dict(size=10, color='red')
-                )
+                ),
+                row=1, col=1
             )
     
+    # Add per-segment plots
+    if segmentation and 'segments' in segmentation:
+        for seg_idx, seg in enumerate(segmentation['segments']):
+            row_num = seg_idx + 2  # Row 1 is overview, segments start at row 2
+            seg_num = seg['segment']
+            size_min, size_max = seg['size_range_bytes']
+            
+            # Filter data to this segment's size range
+            kernel_df_oop_seg = kernel_df_oop[
+                (kernel_df_oop['size_bytes'] >= size_min) & 
+                (kernel_df_oop['size_bytes'] <= size_max)
+            ]
+            kernel_df_inp_seg = kernel_df_inp[
+                (kernel_df_inp['size_bytes'] >= size_min) & 
+                (kernel_df_inp['size_bytes'] <= size_max)
+            ]
+            wall_df_oop_seg = wall_df_oop[
+                (wall_df_oop['size_bytes'] >= size_min) & 
+                (wall_df_oop['size_bytes'] <= size_max)
+            ]
+            wall_df_inp_seg = wall_df_inp[
+                (wall_df_inp['size_bytes'] >= size_min) & 
+                (wall_df_inp['size_bytes'] <= size_max)
+            ]
+            
+            # Add OOP data for this segment
+            if len(kernel_df_oop_seg) > 0:
+                x_oop = kernel_df_oop_seg['size_bytes'].values
+                y_mean_oop = kernel_df_oop_seg['kernel_mean_us'].values
+                y_p25_oop = kernel_df_oop_seg['p25_us'].values
+                y_p75_oop = kernel_df_oop_seg['p75_us'].values
+                
+                # IQR band
+                fig.add_trace(go.Scatter(
+                    x=np.concatenate([x_oop, x_oop[::-1]]),
+                    y=np.concatenate([y_p75_oop, y_p25_oop[::-1]]),
+                    fill='toself',
+                    fillcolor='rgba(31, 119, 180, 0.2)',
+                    line=dict(color='rgba(255,255,255,0)'),
+                    showlegend=False,
+                    name='OOP IQR',
+                    hoverinfo='skip'
+                ), row=row_num, col=1)
+                
+                # Mean line
+                bw_oop_seg = x_oop / y_mean_oop / 1000
+                
+                fig.add_trace(go.Scatter(
+                    x=x_oop,
+                    y=y_mean_oop,
+                    mode='lines+markers',
+                    name='OOP Kernel',
+                    showlegend=False,
+                    line=dict(color=color_oop, width=2),
+                    marker=dict(size=6),
+                    error_y=dict(
+                        type='data',
+                        symmetric=False,
+                        array=y_p75_oop - y_mean_oop,
+                        arrayminus=y_mean_oop - y_p25_oop,
+                        visible=True,
+                        color=color_oop,
+                        thickness=1.5,
+                        width=4
+                    ),
+                    customdata=np.column_stack([bw_oop_seg]),
+                    hovertemplate=(
+                        '<b>OOP Kernel</b><br>' +
+                        'Size: %{x:.0f} bytes<br>' +
+                        'Mean: %{y:.2f} µs<br>' +
+                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        '<extra></extra>'
+                    )
+                ), row=row_num, col=1)
+            
+            # Add INP data for this segment
+            if len(kernel_df_inp_seg) > 0:
+                x_inp = kernel_df_inp_seg['size_bytes'].values
+                y_mean_inp = kernel_df_inp_seg['kernel_mean_us'].values
+                y_p25_inp = kernel_df_inp_seg['p25_us'].values
+                y_p75_inp = kernel_df_inp_seg['p75_us'].values
+                
+                # IQR band
+                fig.add_trace(go.Scatter(
+                    x=np.concatenate([x_inp, x_inp[::-1]]),
+                    y=np.concatenate([y_p75_inp, y_p25_inp[::-1]]),
+                    fill='toself',
+                    fillcolor='rgba(255, 127, 14, 0.2)',
+                    line=dict(color='rgba(255,255,255,0)'),
+                    showlegend=False,
+                    name='INP IQR',
+                    hoverinfo='skip'
+                ), row=row_num, col=1)
+                
+                # Mean line
+                bw_inp_seg = x_inp / y_mean_inp / 1000
+                
+                fig.add_trace(go.Scatter(
+                    x=x_inp,
+                    y=y_mean_inp,
+                    mode='lines+markers',
+                    name='INP Kernel',
+                    showlegend=False,
+                    line=dict(color=color_inp, width=2),
+                    marker=dict(size=6),
+                    error_y=dict(
+                        type='data',
+                        symmetric=False,
+                        array=y_p75_inp - y_mean_inp,
+                        arrayminus=y_mean_inp - y_p25_inp,
+                        visible=True,
+                        color=color_inp,
+                        thickness=1.5,
+                        width=4
+                    ),
+                    customdata=np.column_stack([bw_inp_seg]),
+                    hovertemplate=(
+                        '<b>INP Kernel</b><br>' +
+                        'Size: %{x:.0f} bytes<br>' +
+                        'Mean: %{y:.2f} µs<br>' +
+                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        '<extra></extra>'
+                    )
+                ), row=row_num, col=1)
+            
+            # Add wall clock data for this segment
+            if len(wall_df_oop_seg) > 0:
+                bw_wall_oop_seg = wall_df_oop_seg['size_bytes'].values / wall_df_oop_seg['wall_time_us'].values / 1000
+                
+                fig.add_trace(go.Scatter(
+                    x=wall_df_oop_seg['size_bytes'],
+                    y=wall_df_oop_seg['wall_time_us'],
+                    mode='markers',
+                    name='OOP Wall Clock',
+                    showlegend=False,
+                    marker=dict(
+                        color=color_oop,
+                        size=8,
+                        symbol='circle-open',
+                        line=dict(width=2)
+                    ),
+                    customdata=np.column_stack([bw_wall_oop_seg]),
+                    hovertemplate=(
+                        '<b>OOP Wall Clock</b><br>' +
+                        'Size: %{x:.0f} bytes<br>' +
+                        'Time: %{y:.2f} µs<br>' +
+                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        '<extra></extra>'
+                    )
+                ), row=row_num, col=1)
+            
+            if len(wall_df_inp_seg) > 0:
+                bw_wall_inp_seg = wall_df_inp_seg['size_bytes'].values / wall_df_inp_seg['wall_time_us'].values / 1000
+                
+                fig.add_trace(go.Scatter(
+                    x=wall_df_inp_seg['size_bytes'],
+                    y=wall_df_inp_seg['wall_time_us'],
+                    mode='markers',
+                    name='INP Wall Clock',
+                    showlegend=False,
+                    marker=dict(
+                        color=color_inp,
+                        size=8,
+                        symbol='square-open',
+                        line=dict(width=2)
+                    ),
+                    customdata=np.column_stack([bw_wall_inp_seg]),
+                    hovertemplate=(
+                        '<b>INP Wall Clock</b><br>' +
+                        'Size: %{x:.0f} bytes<br>' +
+                        'Time: %{y:.2f} µs<br>' +
+                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        '<extra></extra>'
+                    )
+                ), row=row_num, col=1)
+    
     # Update layout
+    total_height = 700 + (num_segments * 400)  # Overview plot + segment plots
+    
     fig.update_layout(
         title={
             'text': f'{benchmark_name.upper()} Performance - Size vs. Time',
@@ -329,18 +545,6 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
             'xanchor': 'center',
             'font': {'size': 16}
         },
-        xaxis=dict(
-            title='Message Size (bytes)',
-            type='log',
-            gridcolor='lightgray',
-            showgrid=True
-        ),
-        yaxis=dict(
-            title='Time (µs)',
-            type='log',
-            gridcolor='lightgray',
-            showgrid=True
-        ),
         hovermode='closest',
         showlegend=True,
         legend=dict(
@@ -352,7 +556,27 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
         ),
         plot_bgcolor='white',
         width=1200,
-        height=700
+        height=total_height
+    )
+    
+    # Update all x-axes to log scale with grid (powers of 2)
+    # Labels show 2^n, tooltips show decimal values
+    fig.update_xaxes(
+        title_text='Message Size (bytes)',
+        type='log',
+        dtick='L1',  # Log tick spacing = 1 (but we'll override with tickvals)
+        tickvals=[2**i for i in range(40)],  # Powers of 2: 1, 2, 4, 8, 16, 32, ...
+        ticktext=[f'2^{i}' for i in range(40)],  # Display as 2^0, 2^1, 2^2, etc.
+        gridcolor='lightgray',
+        showgrid=True
+    )
+    
+    # Update all y-axes to log scale with grid
+    fig.update_yaxes(
+        title_text='Time (µs)',
+        type='log',
+        gridcolor='lightgray',
+        showgrid=True
     )
     
     # Save to HTML
