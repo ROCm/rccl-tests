@@ -84,3 +84,6 @@ Segment 2: 64 KiB .. 1 GiB   → y = 21.75 + 2.84·size_MB (R²=1.0000)
 ## Date
 November 8, 2025
 
+
+
+
