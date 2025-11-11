@@ -28,7 +28,9 @@ def find_benchmark_name(run_dir):
     Returns:
         str: Benchmark name (e.g., 'all_reduce')
     """
-    dir_name = os.path.basename(run_dir.rstrip('/'))
+    # Convert to string if Path object
+    run_dir_str = str(run_dir)
+    dir_name = os.path.basename(run_dir_str.rstrip('/'))
     
     # Expected format: run_{benchmark_name}_{YYYYMMDD_HHMMSS}
     if not dir_name.startswith('run_'):
