@@ -15,60 +15,14 @@ import numpy as np
 from scipy.optimize import curve_fit
 import pandas as pd
 
+# Import common data loading functions
+from common_data import (
+    load_benchmark_output,
+    load_timing_data as common_load_timing_data,
+    find_benchmark_name
+)
 
-def load_timing_data(output_dir):
-    """Load timing CSV files from output directory."""
-    timing_files = []
-    for filename in os.listdir(output_dir):
-        if filename.endswith('_rank0.csv') or (filename.endswith('.csv') and '_rank' in filename):
-            timing_files.append(os.path.join(output_dir, filename))
-    
-    if not timing_files:
-        return None
-    
-    # Load and combine all rank files
-    dfs = []
-    for filepath in timing_files:
-        df = pd.read_csv(filepath)
-        dfs.append(df)
-    
-    combined_df = pd.concat(dfs, ignore_index=True)
-    return combined_df
-
-
-def load_benchmark_output(output_dir, benchmark_name):
-    """Load benchmark output file."""
-    output_file = os.path.join(output_dir, f'{benchmark_name}_benchmark_output.txt')
-    if not os.path.exists(output_file):
-        return None
-    
-    with open(output_file, 'r') as f:
-        return f.read()
-
-
-def parse_benchmark_output(content):
-    """Parse benchmark output to extract wall-clock times."""
-    import re
-    
-    # Pattern: size count type op root time_oop algbw busbw errors time_ip ...
-    pattern = r'^\s*(\d+)\s+(\d+)\s+(\w+)\s+(\w+)\s+(-?\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)'
-    
-    results = []
-    for line in content.split('\n'):
-        match = re.match(pattern, line)
-        if match:
-            size_bytes = int(match.group(1))
-            time_oop = float(match.group(6))
-            time_ip_match = re.search(r'\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+', line[match.end():])
-            time_ip = float(time_ip_match.group(1)) if time_ip_match else time_oop
-            
-            results.append({
-                'size_bytes': size_bytes,
-                'wall_time_oop_us': time_oop,
-                'wall_time_ip_us': time_ip
-            })
-    
-    return pd.DataFrame(results)
+# Removed local duplicate functions - now using common_data module
 
 
 def fit_linear(x, y):
@@ -280,18 +234,20 @@ def segment_benchmark_data(output_dir, benchmark_name):
     print("=" * 80)
     
     # Load timing data
-    timing_df = load_timing_data(output_dir)
+    timing_df = common_load_timing_data(output_dir)
     
-    # Load benchmark output
-    benchmark_content = load_benchmark_output(output_dir, benchmark_name)
-    if benchmark_content is None:
-        print(f"Error: Could not load benchmark output")
-        return None
-    
-    benchmark_df = parse_benchmark_output(benchmark_content)
+    # Load benchmark output (CSV format)
+    benchmark_df = load_benchmark_output(output_dir, benchmark_name)
     if benchmark_df.empty:
-        print(f"Error: Could not parse benchmark output")
+        print(f"Error: Could not load benchmark CSV output")
         return None
+    
+    # Note: For segmentation, we need wall clock times in the expected format
+    # The CSV has separate rows for inplace=0 and inplace=1
+    # We need to pivot to get wall_time_oop_us and wall_time_ip_us columns
+    benchmark_df_oop = benchmark_df[benchmark_df['inplace'] == 0][['size_bytes', 'wall_time_us']].rename(columns={'wall_time_us': 'wall_time_oop_us'})
+    benchmark_df_inp = benchmark_df[benchmark_df['inplace'] == 1][['size_bytes', 'wall_time_us']].rename(columns={'wall_time_us': 'wall_time_ip_us'})
+    benchmark_df = benchmark_df_oop.merge(benchmark_df_inp, on='size_bytes', how='outer')
     
     print(f"Parsed {len(benchmark_df)} timing entries from benchmark output")
     

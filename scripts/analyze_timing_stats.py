@@ -12,109 +12,14 @@ import numpy as np
 from pathlib import Path
 import re
 
-def load_timing_data(output_dir):
-    """Load all timing CSV files from a benchmark run directory
+# Import common data loading functions
+from common_data import (
+    load_benchmark_output,
+    load_timing_data as common_load_timing_data,
+    find_benchmark_name
+)
 
-    Returns:
-        pd.DataFrame: Combined timing data from all ranks
-    """
-    timing_files = glob.glob(os.path.join(output_dir, "*_rank*.csv"))
-
-    if not timing_files:
-        print(f"No timing files found in {output_dir}")
-        return None
-
-    print(f"Loading {len(timing_files)} timing files...")
-
-    # Load and concatenate all rank data
-    dfs = []
-    for file in timing_files:
-        try:
-            df = pd.read_csv(file)
-            dfs.append(df)
-        except Exception as e:
-            print(f"Warning: Failed to load {file}: {e}")
-            continue
-
-    if not dfs:
-        print("No valid timing files could be loaded")
-        return None
-
-    combined_df = pd.concat(dfs, ignore_index=True)
-    print(f"Combined data: {len(combined_df)} rows from {len(dfs)} rank files")
-    return combined_df
-
-def load_benchmark_output(output_dir, benchmark_name):
-    """Load benchmark output file content
-
-    Returns:
-        str: Raw benchmark output content, or None if file not found
-    """
-    output_file = os.path.join(output_dir, f"{benchmark_name}_benchmark_output.txt")
-
-    if not os.path.exists(output_file):
-        print(f"Benchmark output file not found: {output_file}")
-        return None
-
-    # Read the raw output
-    with open(output_file, 'r') as f:
-        content = f.read()
-
-    print(f"Loaded benchmark output ({len(content)} chars) from {output_file}")
-    return content
-
-def parse_benchmark_output(content):
-    """Parse benchmark output to extract wall clock timing information per size
-
-    Args:
-        content (str): Raw benchmark output
-
-    Returns:
-        pd.DataFrame: DataFrame with size_bytes and wall_time_us columns
-    """
-    lines = content.strip().split('\n')
-    results = []
-
-    # Pattern to match benchmark timing lines
-    # Looking for lines like: "1024           256     float     sum      -1    37.15    0.02    0.00      0"
-    timing_pattern = re.compile(r'^\s*(\d+)\s+(\d+)\s+(\w+)\s+(\w+)\s+(-?\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)')
-
-    for line in lines:
-        match = timing_pattern.match(line)
-        if match:
-            try:
-                size_bytes = int(match.group(1))
-                count = int(match.group(2))
-                data_type = match.group(3)
-                op = match.group(4)
-                root = int(match.group(5))
-                time_us = float(match.group(6))
-                alg_bw = float(match.group(7))
-                bus_bw = float(match.group(8))
-                errors = int(match.group(9))
-
-                results.append({
-                    'size_bytes': size_bytes,
-                    'count': count,
-                    'data_type': data_type,
-                    'operation': op,
-                    'root': root,
-                    'wall_time_us': time_us,
-                    'alg_bw_gbs': alg_bw,
-                    'bus_bw_gbs': bus_bw,
-                    'errors': errors
-                })
-            except (ValueError, IndexError) as e:
-                print(f"Warning: Failed to parse timing line: {line.strip()}")
-                continue
-
-    if results:
-        df = pd.DataFrame(results)
-        print(f"Parsed {len(df)} timing entries from benchmark output")
-        return df
-    else:
-        print("No timing data found in benchmark output")
-        return pd.DataFrame()
+# Removed local functions - now using common_data module
 
 def create_statistical_summary(timing_df, benchmark_df=None):
     """Create statistical summary of individual kernel timing data
@@ -292,15 +197,16 @@ def main():
     print(f"Analyzing {benchmark_name} benchmark data from {output_dir}")
 
     # Load timing data
-    timing_df = load_timing_data(output_dir)
-    if timing_df is None:
+    timing_df = common_load_timing_data(output_dir)
+    if timing_df is None or timing_df.empty:
         sys.exit(1)
 
-    # Load benchmark output
-    benchmark_content = load_benchmark_output(output_dir, benchmark_name)
-    benchmark_df = None
-    if benchmark_content:
-        benchmark_df = parse_benchmark_output(benchmark_content)
+    # Load benchmark output (CSV format)
+    benchmark_df = load_benchmark_output(output_dir, benchmark_name)
+    if not benchmark_df.empty:
+        print(f"Loaded {len(benchmark_df)} benchmark measurements from CSV")
+    else:
+        benchmark_df = None
 
     # Create statistical summary
     summary_df = create_statistical_summary(timing_df, benchmark_df)

@@ -25,76 +25,18 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
-def load_timing_data(run_dir):
-    """Load all_rank*.csv files and combine them."""
-    timing_files = glob.glob(os.path.join(run_dir, 'all_rank*.csv'))
-    
-    if not timing_files:
-        return None
-    
-    dfs = []
-    for f in timing_files:
-        try:
-            df = pd.read_csv(f)
-            dfs.append(df)
-        except Exception as e:
-            print(f"Warning: Could not load {f}: {e}")
-    
-    if not dfs:
-        return None
-    
-    combined = pd.concat(dfs, ignore_index=True)
-    return combined
+# Import common data loading functions
+from common_data import (
+    load_benchmark_output,
+    load_timing_data as common_load_timing_data,
+    load_bic_segmentation,
+    find_benchmark_name,
+    calculate_bus_bandwidth
+)
 
 
-def parse_benchmark_output(output_file):
-    """
-    Parse benchmark output to extract wall clock times.
-    
-    Format:
-    #       size         count      type   redop     root     time   algbw   busbw #wrong     time   algbw   busbw #wrong
-    #                                                         (us)  (GB/s)  (GB/s)            (us)  (GB/s)  (GB/s)       
-              8              2     float     sum       -1    23.29    0.00    0.00      0    23.26    0.00    0.00      0|N/A
-    
-    Columns 6 and 10 are out-of-place and in-place times respectively.
-    """
-    wall_times = []
-    
-    with open(output_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Match data lines
-            match = re.match(
-                r'^\s*(\d+)\s+(\d+)\s+(\w+)\s+(\w+)\s+(-?\d+)\s+'
-                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)\s+'
-                r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+((\d+)|N/A)',
-                line
-            )
-            
-            if match:
-                size_bytes = int(match.group(1))
-                wall_time_oop_us = float(match.group(6))
-                wall_time_inp_us = float(match.group(10))
-                
-                # Out-of-place
-                wall_times.append({
-                    'size_bytes': size_bytes,
-                    'inplace': 0,
-                    'wall_time_us': wall_time_oop_us
-                })
-                
-                # In-place
-                wall_times.append({
-                    'size_bytes': size_bytes,
-                    'inplace': 1,
-                    'wall_time_us': wall_time_inp_us
-                })
-    
-    return pd.DataFrame(wall_times)
+# Removed local load_timing_data - now using common_data.common_load_timing_data
+# Removed local parse_benchmark_output - now using common_data.load_benchmark_output
 
 
 def build_kernel_summary(timing_df, inplace_mode):
@@ -158,6 +100,9 @@ def format_size(size_bytes):
 def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
     """Create interactive Plotly visualization with main plot and per-segment plots."""
     
+    # Get number of ranks for bus bandwidth calculation
+    nranks = wall_df['ranks'].iloc[0] if len(wall_df) > 0 and 'ranks' in wall_df.columns else 1
+    
     # Build kernel summaries for OOP and INP
     kernel_df_oop = build_kernel_summary(timing_df, inplace_mode=0)
     kernel_df_inp = build_kernel_summary(timing_df, inplace_mode=1)
@@ -212,8 +157,8 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
         ), row=1, col=1)
         
         # Mean line
-        # Calculate bandwidth: GB/s = bytes / microseconds / 1000
-        bw_oop = x_oop / y_mean_oop / 1000
+        # Calculate bus bandwidth using common function
+        bw_oop = calculate_bus_bandwidth(x_oop, y_mean_oop, benchmark_name, nranks)
         
         fig.add_trace(go.Scatter(
             x=x_oop,
@@ -237,7 +182,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 '<b>OOP Kernel</b><br>' +
                 'Size: %{x:.0f} bytes<br>' +
                 'Mean: %{y:.2f} µs<br>' +
-                'BW: %{customdata[0]:.2f} GB/s<br>' +
+                'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
         ), row=1, col=1)
@@ -262,8 +207,8 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
         ), row=1, col=1)
         
         # Mean line
-        # Calculate bandwidth: GB/s = bytes / microseconds / 1000
-        bw_inp = x_inp / y_mean_inp / 1000
+        # Calculate bus bandwidth using common function
+        bw_inp = calculate_bus_bandwidth(x_inp, y_mean_inp, benchmark_name, nranks)
         
         fig.add_trace(go.Scatter(
             x=x_inp,
@@ -287,14 +232,15 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 '<b>INP Kernel</b><br>' +
                 'Size: %{x:.0f} bytes<br>' +
                 'Mean: %{y:.2f} µs<br>' +
-                'BW: %{customdata[0]:.2f} GB/s<br>' +
+                'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
         ), row=1, col=1)
     
     # Plot OOP wall clock times
     if len(wall_df_oop) > 0:
-        bw_wall_oop = wall_df_oop['size_bytes'].values / wall_df_oop['wall_time_us'].values / 1000
+        # Use busbw from CSV (what the benchmark reports)
+        bw_wall_oop = wall_df_oop['busbw_gbs'].values
         
         fig.add_trace(go.Scatter(
             x=wall_df_oop['size_bytes'],
@@ -312,14 +258,15 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 '<b>OOP Wall Clock</b><br>' +
                 'Size: %{x:.0f} bytes<br>' +
                 'Time: %{y:.2f} µs<br>' +
-                'BW: %{customdata[0]:.2f} GB/s<br>' +
+                'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
         ), row=1, col=1)
     
     # Plot INP wall clock times
     if len(wall_df_inp) > 0:
-        bw_wall_inp = wall_df_inp['size_bytes'].values / wall_df_inp['wall_time_us'].values / 1000
+        # Use busbw from CSV (what the benchmark reports)
+        bw_wall_inp = wall_df_inp['busbw_gbs'].values
         
         fig.add_trace(go.Scatter(
             x=wall_df_inp['size_bytes'],
@@ -337,7 +284,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 '<b>INP Wall Clock</b><br>' +
                 'Size: %{x:.0f} bytes<br>' +
                 'Time: %{y:.2f} µs<br>' +
-                'BW: %{customdata[0]:.2f} GB/s<br>' +
+                'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                 '<extra></extra>'
             )
         ), row=1, col=1)
@@ -404,7 +351,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 ), row=row_num, col=1)
                 
                 # Mean line
-                bw_oop_seg = x_oop / y_mean_oop / 1000
+                bw_oop_seg = calculate_bus_bandwidth(x_oop, y_mean_oop, benchmark_name, nranks)
                 
                 fig.add_trace(go.Scatter(
                     x=x_oop,
@@ -429,7 +376,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                         '<b>OOP Kernel</b><br>' +
                         'Size: %{x:.0f} bytes<br>' +
                         'Mean: %{y:.2f} µs<br>' +
-                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                         '<extra></extra>'
                     )
                 ), row=row_num, col=1)
@@ -454,7 +401,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                 ), row=row_num, col=1)
                 
                 # Mean line
-                bw_inp_seg = x_inp / y_mean_inp / 1000
+                bw_inp_seg = calculate_bus_bandwidth(x_inp, y_mean_inp, benchmark_name, nranks)
                 
                 fig.add_trace(go.Scatter(
                     x=x_inp,
@@ -479,14 +426,15 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                         '<b>INP Kernel</b><br>' +
                         'Size: %{x:.0f} bytes<br>' +
                         'Mean: %{y:.2f} µs<br>' +
-                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                         '<extra></extra>'
                     )
                 ), row=row_num, col=1)
             
             # Add wall clock data for this segment
             if len(wall_df_oop_seg) > 0:
-                bw_wall_oop_seg = wall_df_oop_seg['size_bytes'].values / wall_df_oop_seg['wall_time_us'].values / 1000
+                # Use busbw from CSV (what the benchmark reports)
+                bw_wall_oop_seg = wall_df_oop_seg['busbw_gbs'].values
                 
                 fig.add_trace(go.Scatter(
                     x=wall_df_oop_seg['size_bytes'],
@@ -505,13 +453,14 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                         '<b>OOP Wall Clock</b><br>' +
                         'Size: %{x:.0f} bytes<br>' +
                         'Time: %{y:.2f} µs<br>' +
-                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                         '<extra></extra>'
                     )
                 ), row=row_num, col=1)
             
             if len(wall_df_inp_seg) > 0:
-                bw_wall_inp_seg = wall_df_inp_seg['size_bytes'].values / wall_df_inp_seg['wall_time_us'].values / 1000
+                # Use busbw from CSV (what the benchmark reports)
+                bw_wall_inp_seg = wall_df_inp_seg['busbw_gbs'].values
                 
                 fig.add_trace(go.Scatter(
                     x=wall_df_inp_seg['size_bytes'],
@@ -530,7 +479,7 @@ def plot_interactive(run_dir, benchmark_name, timing_df, wall_df, segmentation):
                         '<b>INP Wall Clock</b><br>' +
                         'Size: %{x:.0f} bytes<br>' +
                         'Time: %{y:.2f} µs<br>' +
-                        'BW: %{customdata[0]:.2f} GB/s<br>' +
+                        'Bus BW: %{customdata[0]:.2f} GB/s<br>' +
                         '<extra></extra>'
                     )
                 ), row=row_num, col=1)
@@ -615,21 +564,19 @@ def main():
     print(f"Run directory: {args.run_dir}")
     
     # Load timing data
-    timing_df = load_timing_data(args.run_dir)
+    timing_df = common_load_timing_data(args.run_dir)
     if timing_df is None or len(timing_df) == 0:
         print("Error: No timing data found")
         return 1
     
     print(f"  Loaded {len(timing_df)} timing measurements")
     
-    # Load benchmark output
-    output_file = os.path.join(args.run_dir, f'{benchmark_name}_benchmark_output.txt')
-    if not os.path.exists(output_file):
-        print(f"Warning: Benchmark output not found: {output_file}")
-        wall_df = pd.DataFrame()
+    # Load benchmark output (CSV format)
+    wall_df = load_benchmark_output(args.run_dir, benchmark_name)
+    if not wall_df.empty:
+        print(f"  Loaded {len(wall_df)} wall clock measurements from CSV")
     else:
-        wall_df = parse_benchmark_output(output_file)
-        print(f"  Loaded {len(wall_df)} wall clock measurements")
+        print(f"  Warning: No benchmark CSV output found")
     
     # Load BIC segmentation
     segmentation = load_bic_segmentation(args.run_dir, benchmark_name)

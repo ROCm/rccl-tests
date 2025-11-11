@@ -188,6 +188,9 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
   std::vector<std::pair<std::string, std::string>> outputValuesKeys;
   std::string wrongEltsStr = (wrongElts == -1) ? "N/A" : std::to_string(wrongElts);
   int nodes = totalRanks / ranksPerNode;
+  
+  // Calculate bus bandwidth factor for Python scripts
+  double busBwFactor = (algBw > 0.0) ? (busBw / algBw) : 0.0;
 
   outputValuesKeys.push_back(makeValueKeyPair(_numCycle, "numCycle"));
   outputValuesKeys.push_back(makeValueKeyPair(_collectiveName, "name"));
@@ -206,6 +209,7 @@ void Reporter::addResult(int gpusPerRank, int ranksPerNode, int totalRanks, size
   outputValuesKeys.push_back(makeValueKeyPair(timeUsec, "time"));
   outputValuesKeys.push_back(makeValueKeyPair(algBw, "algBw"));
   outputValuesKeys.push_back(makeValueKeyPair(busBw, "busBw"));
+  outputValuesKeys.push_back(makeValueKeyPair(busBwFactor, "busBwFactor"));
   outputValuesKeys.push_back(makeValueKeyPair(wrongEltsStr, "wrong"));
 
   _outputData.push_back(outputValuesKeys);
@@ -223,7 +227,7 @@ void Reporter::writeFile() {
 #else
     _out << "gpus,";
 #endif
-    _out << "size,type,redop,inplace,time,algbw,busbw,#wrong\n";
+    _out << "size,type,redop,inplace,time,algbw,busbw,busbwfactor,#wrong\n";
     for (auto iterEntries = _outputData.begin(); iterEntries != _outputData.end(); ++iterEntries) {
       for (auto iterVals = (*iterEntries).begin(); iterVals != (*iterEntries).end(); ++iterVals) {
 	_out << iterVals->first;

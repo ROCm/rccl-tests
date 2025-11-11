@@ -156,6 +156,8 @@ def run_benchmark_for_full_range(benchmark_name, num_ranks, min_size, max_size,
     os.makedirs(rocprof_dir, exist_ok=True)
     
     # Build command
+    csv_output_file = os.path.join(output_dir, f'{benchmark_name}_benchmark_output.csv')
+    
     cmd = [
         'mpirun',
         '-np', str(num_ranks),
@@ -171,7 +173,9 @@ def run_benchmark_for_full_range(benchmark_name, num_ranks, min_size, max_size,
         '-f', '2',
         '-n', str(iterations),
         '-w', str(warmup),
-        '-g', '1'
+        '-g', '1',
+        '-x', csv_output_file,
+        '-Z', 'csv'
     ]
     
     print(f"Running: {' '.join(cmd)}")
@@ -372,7 +376,8 @@ def main():
     print(f"BENCHMARK COMPLETE")
     print(f"{'='*80}")
     print(f"Output directory: {output_dir}")
-    print(f"Benchmark output: {args.benchmark}_benchmark_output.txt")
+    print(f"Benchmark output (text): {args.benchmark}_benchmark_output.txt")
+    print(f"Benchmark output (CSV): {args.benchmark}_benchmark_output.csv")
     print(f"Timing CSVs: all_rank*.csv")
     print(f"ROCProf traces: rocp/{socket.gethostname()}/*_kernel_trace.csv")
     print(f"{'='*80}\n")
