@@ -387,7 +387,7 @@ typedef enum {
   ncclFuncSendRecv = 6,
   ncclFuncSend = 7,
   ncclFuncRecv = 8,
-  ncclFuncAllToAllPivot = 9,
+  ncclFuncAlltoAll = 9,
   ncclNumFuncs = 10
 } ncclFunc_t;
 
