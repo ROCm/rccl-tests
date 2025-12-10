@@ -151,6 +151,9 @@ static int local_register = 0;
 #endif
 static int minCudaArch = 1<<30;
 
+// Test bias
+static int test_bias = 0;
+
 Reporter::Reporter(std::string fileName, std::string outputFormat) : _outputFormat(outputFormat) {
   if (!fileName.empty()) {
     if (isMainThread()) {
@@ -1189,6 +1192,7 @@ int main(int argc, char* argv[]) {
     {"output_file", required_argument, 0, 'x'},                     //RCCL
     {"output_format", required_argument, 0, 'Z'},                   //RCCL
     {"output_algo_proto_channels", required_argument, 0, 'M'},      //RCCL
+    {"test_bias", required_argument, 0, 'B'},
     {"help", no_argument, 0, 'h'},
     {}
   };
@@ -1196,7 +1200,7 @@ int main(int argc, char* argv[]) {
   while(1) {
     int c;
 
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:M:h", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:G:C:a:R:Y:u:O:q:F:E:x:Z:M:B:h", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1340,6 +1344,9 @@ int main(int argc, char* argv[]) {
         output_algo_proto_channels = strtol(optarg, NULL, 0);
         if(rcclTestsGetAlgoInfo == NULL || rcclTestsGetAlgoName == NULL || rcclTestsGetProtocolName == NULL) output_algo_proto_channels = 0;
         break;
+      case 'B':
+        test_bias = strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1380,6 +1387,7 @@ int main(int argc, char* argv[]) {
 	    "[-E,--rotating_tensor <0/1>] \n\t"
             "[-x,--output_file <output file name>] \n\t"
             "[-Z,--output_format <output format <csv|json>] \n\t"
+            "[-B,--test_bias <0/1>] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1546,8 +1554,8 @@ testResult_t run() {
   // Reserve 1GiB of memory for each 16GiB installed, but limit to a max of 4GiB
   const size_t GB = (1ULL << 30);
   size_t reserveMem =  std::min(DIVUP(maxMem, 16*GB) * 1*GB, 4*GB);
-  // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
-  size_t memMaxBytes = (maxMem - reserveMem - 1*GB) / (datacheck ? 3 : 2);
+  // We need sendbuff, recvbuff, expected (when datacheck enabled), bias (when test_bias enabled), plus 1G for the rest.
+  size_t memMaxBytes = (maxMem - reserveMem - 1*GB) / (datacheck ? (test_bias ? 4 : 3) : (test_bias ? 3 : 2));
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
     if (minBytes > maxBytes) minBytes = maxBytes;
@@ -1578,7 +1586,11 @@ testResult_t run() {
   for (int i=0; i<nGpus*nThreads; i++) {
     gpus[i] = ((gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i)%numDevices;
     CUDACHECK(cudaSetDevice(gpus[i]));
-    TESTCHECK(AllocateBuffs(sendbuffs.data()+i, sendBytes, recvbuffs.data()+i, recvBytes, expected.data()+i, (size_t)maxBytes, bias.data()+i));
+    if(test_bias) {
+      TESTCHECK(AllocateBuffs(sendbuffs.data()+i, sendBytes, recvbuffs.data()+i, recvBytes, expected.data()+i, (size_t)maxBytes, bias.data()+i));
+    } else {
+      TESTCHECK(AllocateBuffs(sendbuffs.data()+i, sendBytes, recvbuffs.data()+i, recvBytes, expected.data()+i, (size_t)maxBytes, NULL));
+    }
     if (streamnull) {
       streams[i] = NULL;
     }
