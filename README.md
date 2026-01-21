@@ -1,5 +1,8 @@
 # RCCL Tests
 
+> [!CAUTION]
+> The rccl-tests repository is retired, please use the [ROCm/rocm-systems](https://github.com/ROCm/rocm-systems) repository
+
 These tests check both the performance and the correctness of RCCL operations. They can be compiled against [RCCL](https://github.com/ROCm/rccl).
 
 ## Build
